@@ -109,6 +109,27 @@ jobs:
         run: |
           test "$MEDIUM_OUTCOME" = failure
           test -s mcp-guard-medium.sarif
+      - name: Selector chooses an explicit nested server map
+        id: selector
+        uses: ./
+        with:
+          path: tests/fixtures/ambiguous.json
+          selector: $.config.mcpServers
+          output: mcp-guard-selector.sarif
+          upload-artifact: false
+      - name: Verify selector forwarding
+        env:
+          SELECTOR_OUTCOME: ${{ steps.selector.outcome }}
+        run: |
+          test "$SELECTOR_OUTCOME" = success
+          test -s mcp-guard-selector.sarif
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("mcp-guard-selector.sarif").read_text())
+          assert {item["ruleId"] for item in report["runs"][0]["results"]} == {"MCPG005"}
+          PY
 
   artifact-e2e:
     name: downloaded SARIF artifact

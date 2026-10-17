@@ -26,6 +26,10 @@ inputs:
     description: Code Scanning category when upload-sarif is enabled
     required: false
     default: mcp-guard
+  selector:
+    description: Exact JSON path for the server map when multiple maps exist, for example $.config.mcpServers
+    required: false
+    default: ''
   fail-on:
     description: Minimum severity that fails the action
     required: false
@@ -38,10 +42,15 @@ runs:
       env:
         MCP_GUARD_PATH: ${{ inputs.path }}
         MCP_GUARD_OUTPUT: ${{ inputs.output }}
+        MCP_GUARD_SELECTOR: ${{ inputs.selector }}
         MCP_GUARD_FAIL_ON: ${{ inputs.fail-on }}
       run: |
         set +e
-        PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT" --fail-on "$MCP_GUARD_FAIL_ON"
+        if [ -n "$MCP_GUARD_SELECTOR" ]; then
+          PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT" --selector "$MCP_GUARD_SELECTOR" --fail-on "$MCP_GUARD_FAIL_ON"
+        else
+          PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT" --fail-on "$MCP_GUARD_FAIL_ON"
+        fi
         status=$?
         echo "status=$status" >> "$GITHUB_OUTPUT"
         if [ "$status" -gt 1 ]; then

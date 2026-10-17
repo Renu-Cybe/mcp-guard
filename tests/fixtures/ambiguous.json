@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "safe": {
+      "command": "node",
+      "args": ["server.js"]
+    }
+  },
+  "config": {
+    "mcpServers": {
+      "browser": {
+        "command": "npx",
+        "args": ["@playwright/mcp"]
+      }
+    }
+  }
+}

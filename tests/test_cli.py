@@ -33,6 +33,30 @@ def test_nested_claude_format(tmp_path):
     assert r.returncode == 0
     assert 'MCPG006' in r.stdout
 
+
+def test_selector_fails_closed_on_ambiguous_maps_and_scopes_baseline(tmp_path):
+    cfg = {
+        'mcpServers': {'safe': {'command': 'node', 'args': ['server.js']}},
+        'config': {'mcpServers': {'risky': {'command': 'bash', 'args': ['-c', 'run']}}},
+    }
+    f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
+    ambiguous = run('scan', str(f), '--format', 'json')
+    assert ambiguous.returncode == 2
+    assert '$.mcpServers' in ambiguous.stderr
+    assert '$.config.mcpServers' in ambiguous.stderr
+
+    selected = run('scan', str(f), '--selector', '$.config.mcpServers', '--format', 'json')
+    assert selected.returncode == 1
+    findings = json.loads(selected.stdout)
+    assert {item['server'] for item in findings} == {'risky'}
+
+    base = tmp_path/'base.json'
+    assert run('baseline', str(f), '--selector', '$.config.mcpServers', '--output', str(base)).returncode == 0
+    diff = run('diff', str(f), '--selector', '$.config.mcpServers', '--baseline', str(base), '--format', 'json')
+    assert diff.returncode == 0
+    assert json.loads(diff.stdout) == []
+
+
 def test_sarif_uses_source_file_and_redacts_query_secret(tmp_path):
     cfg = {'mcpServers': {'remote': {'url':'https://example.test/mcp?token=not-a-real-token'}}}
     f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
@@ -160,6 +184,7 @@ def test_action_contract():
     assert 'upload-artifact:' in action
     assert 'upload-sarif:' in action
     assert 'artifact-name:' in action
+    assert 'selector:' in action
     assert 'fail-on:' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
 

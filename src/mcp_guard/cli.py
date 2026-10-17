@@ -109,7 +109,7 @@ def _parse_config(path: Path):
     return _parse_jsonc(text)
 
 
-def load_servers(path: Path):
+def load_servers(path: Path, selector=None):
     if path.is_symlink():
         raise ValueError("symlink input is not supported")
     if path.stat().st_size > MAX_INPUT_BYTES:
@@ -123,13 +123,20 @@ def load_servers(path: Path):
             for k,v in obj.items(): walk(v, where + "." + k)
     walk(data)
     if not candidates: raise ValueError("No supported mcpServers/servers object found")
-    # Prefer the shallowest candidate and avoid duplicate nested matches.
-    _, servers = sorted(candidates, key=lambda x: len(x[0]))[0]
-    return servers
+    by_path = {where: servers for where, servers in candidates}
+    if selector:
+        if selector not in by_path:
+            available = ", ".join(sorted(by_path))
+            raise ValueError(f"selector {selector!r} did not match a supported server map; available: {available}")
+        return by_path[selector]
+    if len(by_path) > 1:
+        available = ", ".join(sorted(by_path))
+        raise ValueError(f"multiple supported server maps found; use --selector with one of: {available}")
+    return next(iter(by_path.values()))
 
 
-def scan_file(path: Path):
-    servers = load_servers(path)
+def scan_file(path: Path, selector=None):
+    servers = load_servers(path, selector=selector)
     findings = []
     for name, cfg in servers.items():
         if not isinstance(cfg, dict): continue
@@ -255,12 +262,12 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
-    b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True)
-    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True); b.add_argument("--selector")
+    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
     args = p.parse_args(argv)
     try:
-        findings = scan_file(Path(args.path))
+        findings = scan_file(Path(args.path), selector=args.selector)
         if args.command == "baseline":
             Path(args.output).write_text(json.dumps({"version":1,"findings":[f.fingerprint for f in findings]}, indent=2), encoding="utf-8"); return 0
         if args.command == "diff":

@@ -22,9 +22,11 @@ mcp-guard baseline .mcp.json --output .mcp-guard-baseline.json
 mcp-guard diff .mcp.json --baseline .mcp-guard-baseline.json --format markdown
 # Treat medium and high findings as a CI failure
 mcp-guard scan .mcp.json --fail-on medium
+# Select a nested server map when a file contains more than one
+mcp-guard scan settings.json --selector '$.config.mcpServers'
 ```
 
-By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid input returns 2. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
+By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
 
@@ -39,7 +41,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.4
+      - uses: Renu-Cybe/mcp-guard@v0.1.5
         with:
           path: .mcp.json
           fail-on: medium
@@ -53,7 +55,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.4
+  - uses: Renu-Cybe/mcp-guard@v0.1.5
     with:
       path: .mcp.json
       upload-sarif: true
@@ -62,7 +64,7 @@ steps:
 
 ## Scope and limitations
 
-This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Supported input formats are JSON and JSONC MCP server maps; registry `server.json`, `SKILL.md`, plugin manifests, SDK source files, and TOML files are rejected as unsupported inputs rather than treated as server maps. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
+This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Supported input formats are JSON and JSONC MCP server maps; registry `server.json`, `SKILL.md`, plugin manifests, SDK source files, and TOML files are rejected as unsupported inputs rather than treated as server maps. When several server maps are present, scanning stops until `--selector` identifies the intended map. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
 
 Loopback endpoints (`localhost`, `127.0.0.1`, and `::1`) are treated as local transports, which avoids flagging common browser-extension bridges for remote authentication or plaintext HTTP. Other private-network and cloud-metadata targets remain high-severity findings.
 
