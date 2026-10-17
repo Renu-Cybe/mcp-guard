@@ -1,5 +1,7 @@
 # MCP Guard
 
+[![CI](https://github.com/Renu-Cybe/mcp-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Renu-Cybe/mcp-guard/actions/workflows/ci.yml)
+
 MCP Guard is a local-first static checker for MCP and agent configuration. It is intended as a release and CI gate, not a security certification.
 
 ## What it does
@@ -48,3 +50,5 @@ This release is static and configuration-focused. It does not execute MCP server
 ```bash
 python -m pytest -q
 ```
+
+The public CI workflow tests the package on Ubuntu, Windows, and macOS with Python 3.10 and 3.13. It also runs the local GitHub Action against safe and high-risk fixtures, checks the failure gate, and downloads the uploaded SARIF artifact for a second verification job.

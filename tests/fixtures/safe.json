@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "local-tools": {
+      "command": "python",
+      "args": ["server.py"],
+      "env": {
+        "MODE": "test"
+      }
+    }
+  }
+}
