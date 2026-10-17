@@ -42,6 +42,48 @@ If these gates are not met, stop expanding features and record the blocking reas
 | 2026-10-17 | D3 | T-04 | `grafana/mcp-grafana` | `5ea0cc34678cdd6fcd2f5c731b6619a8433bcb20` | sanitized CLI + GitHub Action false-positive trial | `tests/corpus/fixtures/d3-t04-grafana.json` | `mcp-guard scan tests/corpus/fixtures/d3-t04-grafana.json --format json --fail-on none`; local action `./` with `fail-on: medium` | n/a | CLI and runner Action both completed cleanly with zero findings | 0 / success expected | none | no false positive observed in sanitized reproduction | `mcp-guard-d3-t04-grafana.sarif`; artifact upload disabled | no contact | pending | trial passed; not adopted | https://github.com/Renu-Cybe/mcp-guard/blob/5bfcb645efda62ea27f7d29b1f05ae7f7d831b3f/tests/corpus/fixtures/d3-t04-grafana.json; https://github.com/Renu-Cybe/mcp-guard/actions/runs/39065377074 | codex | Use as clean-path baseline in D4 |
 | 2026-10-17 | D3 | T-05 | `firecrawl/firecrawl-mcp-server` | `26a23f28ec22241cb16e2115f27a6370ce2a00e0` | sanitized CLI + GitHub Action trial | `tests/corpus/fixtures/d3-t05-firecrawl.json` | `mcp-guard scan tests/corpus/fixtures/d3-t05-firecrawl.json --format json --fail-on none`; local action `./` with `fail-on: medium` | n/a | CLI matched expected finding; runner Action completed with expected failure gate | 1 / failure expected | `MCPG005` medium | unverified from static config only | `mcp-guard-d3-t05-firecrawl.sarif`; artifact upload disabled | no contact | pending | trial passed; not adopted | https://github.com/Renu-Cybe/mcp-guard/blob/5bfcb645efda62ea27f7d29b1f05ae7f7d831b3f/tests/corpus/fixtures/d3-t05-firecrawl.json; https://github.com/Renu-Cybe/mcp-guard/actions/runs/39065377074 | codex | Compare package pinning and secret-reference handling during D4 |
 
+## D4 false-positive analysis and integration priority
+
+D4 is a read-only analysis of the five sanitized D3 fixtures and their local-action runner results. It measures scanner and Action reproducibility, not candidate adoption, maintainer agreement, runtime safety, or a confirmed vulnerability. The D3 full CI run [39065644412](https://github.com/Renu-Cybe/mcp-guard/actions/runs/39065644412) passed all matrix, Action E2E, and SARIF checks. The D3 Action steps generated and verified SARIF in the runner with `upload-artifact: false`; artifact delivery to a downstream consumer was not exercised.
+
+| Evidence summary | Result | Interpretation |
+|---|---|---|
+| Sanitized fixtures | 5 total; 4 with findings and 1 clean | Reproducible static configurations only |
+| Rule distribution | `MCPG005` x3; `MCPG006` x1; no finding for T-04 | Useful coverage for package pinning, visible remote auth, and a clean env/loopback path |
+| Confirmed false positives | 0 | T-01 is only a host-managed OAuth candidate; T-02/T-03/T-05 are unpinned-package signals; T-04 is a clean baseline |
+| External validation | No contact; no third-party runtime or credentials | Adoption, maintainer intent, and runtime behavior remain unverified |
+
+### False-positive assessment and rule recommendations
+
+| Target | Observed signal | D4 classification | Recommendation | Blocker / next evidence |
+|---|---|---|---|---|
+| T-01 GitHub MCP | `MCPG006` medium for an HTTPS streamable-HTTP URL with no auth field in the file | `candidate / unverified`; host-managed OAuth may exist outside the file | Keep medium. Clarify that the rule means “no visible authentication configuration”; do not add a domain-specific allowlist or suppress this host | Add local fixtures for explicit OAuth/header metadata and an auditable context or suppression path before changing the rule |
+| T-02 Playwright | `MCPG005` medium for `@playwright/mcp@latest` | `unverified` as a project policy choice, not a static false positive | Keep medium. Preserve the finding and distinguish an explicit mutable tag from a completely omitted version in future evidence | Add a version-pinned comparison and document lockfile/semver remediation |
+| T-03 Kubernetes | `MCPG005` medium for `kubernetes-mcp-server@latest` | `unverified`; only the client JSON is covered | Keep medium. Do not infer a TOML or Kubernetes-runtime finding from this JSON result | A TOML/runtime adapter and permission fixture are required before deeper integration |
+| T-04 Grafana | Zero findings for loopback URL plus `${GRAFANA_SERVICE_ACCOUNT_TOKEN}` | `not observed`; clean regression baseline | Keep current behavior. Environment references must remain free of `MCPG001`; loopback must remain outside remote-auth/plaintext findings | Add a non-loopback HTTPS + environment-reference comparison later; do not generalize from one clean combination |
+| T-05 Firecrawl | `MCPG005` medium for `npx -y firecrawl-mcp`; env API-key reference did not trigger `MCPG001` | `unverified`; valid package-pinning signal, no confirmed false positive | Keep medium. Keep package pinning and secret-reference results separate in the report | Add a pinned package comparison and a remote-auth variant before changing severity or wording |
+
+### Rule adjustment proposals (not implemented in D4)
+
+| Rule | Proposal | Decision |
+|---|---|---|
+| `MCPG006` | Retain medium severity; add context wording or an auditable host-managed-auth metadata/suppression mechanism; never hard-code a vendor/domain exception | No code change until an explicit-auth comparison and stronger evidence exist |
+| `MCPG005` | Retain medium severity for `@latest` and missing versions; later expose whether the evidence is a mutable tag or an omitted version and avoid duplicate reports when lockfiles are available | No downgrade or exemption from these five samples |
+| `MCPG001` | Retain the current environment-variable reference behavior demonstrated by T-04 and T-05 | No change |
+
+### Integration priority
+
+This is a validation and product-work order, not a market-demand or adoption claim.
+
+| Priority | Target | Why | Boundary |
+|---|---|---|---|
+| P0 | T-01 | Highest semantic risk: `MCPG006` can be context-dependent for host-managed OAuth | Validate auth context before treating the result as a blocking signal |
+| P0 | T-02 and T-05 | Common, low-cost `npx` configurations exercise the same actionable package-pinning message | Improve evidence wording and pinned-versus-unpinned comparisons before broader rollout |
+| P1 | T-03 | High-impact Kubernetes context, but current input stops at client JSON | Wait for TOML/runtime coverage; do not expand the JSON rule scope implicitly |
+| P2 | T-04 | Low-friction clean regression that protects against credential and loopback false positives | One clean configuration is not a general adoption or safety claim |
+
+The existing D3 source links use public README or `main` pages while the candidate commit is recorded in the table. For strict reproducibility, future evidence should prefer candidate commit permalinks. No rule implementation, SaaS work, external contact, or third-party runtime execution was performed in D4.
+
 ## Evidence rules
 
 - Record public links, commands, exit codes, and sanitized output only.
