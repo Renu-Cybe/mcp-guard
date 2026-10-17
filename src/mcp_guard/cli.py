@@ -11,10 +11,11 @@ DANGEROUS = re.compile(r"(?i)(^|[/\\\s])(sh|bash|zsh|fish|cmd|powershell|pwsh)(\
 INLINE_EXEC = re.compile(r"(?i)(?:^|\s)(?:python(?:\d+(?:\.\d+)?)?|node|ruby|perl|php)\s+(?:-c|-e)\b")
 BROAD_PATH = re.compile(r"(^|[/\\])(?:\.ssh|\.aws|\.kube|etc|var[/\\]run)([/\\]|$)|^(?:/|[A-Za-z]:[\\/])$|^~(?:[/\\]|$)")
 UNPINNED = re.compile(r"(?i)(?:@latest$|\b(?:npm|pypi|github):[^@\s]+$)")
-EXECUTOR = re.compile(r"(?i)\b(?:npx|uvx|pipx|bunx)\s+(?:(?:-[^\s]+)\s+)*(?P<package>@?[\w.-]+(?:/[\w.-]+)?)(?:\s|$)")
+EXECUTOR = re.compile(r"(?i)\b(?:npx|uvx|pipx|bunx)\s+(?:(?:-[^\s]+)\s+)*(?P<package>@?[\w.-]+(?:/[\w.-]+)?(?:@[\w.+-]+)?)(?:\s|$)")
 WILDCARD = re.compile(r"(^|[\s,])\*($|[\s,])")
 MAX_INPUT_BYTES = 2 * 1024 * 1024
 SUPPORTED_SUFFIXES = {".json", ".jsonc"}
+INPUT_FORMATS = ("mcp-json", "registry")
 AUTH_VALUE_KEYS = {
     "authorization", "token", "oauth", "api_key", "apikey", "access_token",
     "refresh_token", "client_secret", "x_api_key", "x-api-key",
@@ -110,12 +111,113 @@ def _parse_config(path: Path):
     return _parse_jsonc(text)
 
 
-def load_servers(path: Path, selector=None):
+def _registry_server_name(registry_name, item, fallback):
+    name = item.get("name") if isinstance(item, dict) else None
+    if isinstance(name, str) and name.strip():
+        return name.strip()
+    if isinstance(registry_name, str) and registry_name.strip():
+        return f"{registry_name.strip()}:{fallback}"
+    return fallback
+
+
+def _load_registry_servers(data):
+    """Translate the explicit MCP Registry server.json shape to server maps.
+
+    Registry metadata is never executed or fetched.  Only the small, published
+    package/remote contract is accepted, and unknown top-level fields fail closed
+    so an arbitrary server.json cannot silently become a scan target.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("registry input must be a JSON object")
+    schema_uri = data.get("$schema")
+    if schema_uri is not None and (
+        not isinstance(schema_uri, str)
+        or not schema_uri.startswith("https://static.modelcontextprotocol.io/schemas/")
+    ):
+        raise ValueError("unsupported registry schema URI")
+    allowed = {"$schema", "name", "title", "description", "version", "websiteUrl", "repository", "icons", "packages", "remotes", "_meta"}
+    unknown = sorted(set(data) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported registry fields: {', '.join(unknown)}")
+    if not any(key in data for key in ("packages", "remotes")):
+        raise ValueError("registry input requires packages or remotes")
+    registry_name = data.get("name")
+    if registry_name is not None and (not isinstance(registry_name, str) or not registry_name.strip()):
+        raise ValueError("registry name must be a non-empty string")
+    servers = {}
+    packages = data.get("packages", [])
+    remotes = data.get("remotes", [])
+    if not isinstance(packages, list) or not isinstance(remotes, list):
+        raise ValueError("registry packages and remotes must be arrays")
+    for index, item in enumerate(packages):
+        if not isinstance(item, dict):
+            raise ValueError(f"registry package {index} must be an object")
+        allowed_package = {"name", "registryType", "identifier", "version", "transport", "environmentVariables"}
+        unknown = sorted(set(item) - allowed_package)
+        if unknown:
+            raise ValueError(f"unsupported registry package fields: {', '.join(unknown)}")
+        registry_type = item.get("registryType")
+        identifier = item.get("identifier")
+        if registry_type not in {"npm", "pypi"} or not isinstance(identifier, str) or not identifier.strip():
+            raise ValueError(f"registry package {index} requires registryType npm/pypi and identifier")
+        version = item.get("version")
+        if version is not None and (not isinstance(version, str) or not version.strip()):
+            raise ValueError(f"registry package {index} version must be a non-empty string")
+        transport = item.get("transport")
+        if transport is not None:
+            if not isinstance(transport, dict) or set(transport) - {"type"} or transport.get("type") not in {"stdio", None}:
+                raise ValueError(f"registry package {index} has unsupported transport")
+        environment = item.get("environmentVariables", [])
+        if not isinstance(environment, list) or any(not isinstance(entry, dict) or set(entry) - {"name", "description", "isSecret", "isRequired"} or not isinstance(entry.get("name"), str) for entry in environment):
+            raise ValueError(f"registry package {index} has invalid environmentVariables")
+        command = "npx" if registry_type == "npm" else "uvx"
+        package_ref = identifier.strip() + (f"@{version.strip()}" if version else "")
+        cfg = {"command": command, "args": ["-y", package_ref]}
+        if environment:
+            cfg["env"] = {entry["name"]: "${MCP_GUARD_REGISTRY_SECRET}" for entry in environment if entry.get("isSecret")}
+        name = _registry_server_name(registry_name, item, identifier.strip())
+        if name in servers:
+            raise ValueError(f"duplicate registry server name: {name}")
+        servers[name] = cfg
+    for index, item in enumerate(remotes):
+        if not isinstance(item, dict):
+            raise ValueError(f"registry remote {index} must be an object")
+        allowed_remote = {"name", "type", "url", "headers"}
+        unknown = sorted(set(item) - allowed_remote)
+        if unknown:
+            raise ValueError(f"unsupported registry remote fields: {', '.join(unknown)}")
+        url = item.get("url")
+        remote_type = item.get("type")
+        if remote_type not in {"sse", "streamable-http", "streamableHttp"} or not isinstance(url, str) or urlparse(url).scheme not in {"http", "https"}:
+            raise ValueError(f"registry remote {index} requires a supported type and http(s) url")
+        headers = item.get("headers", [])
+        if not isinstance(headers, list) or any(not isinstance(header, dict) or set(header) - {"name", "description", "isSecret", "isRequired"} or not isinstance(header.get("name"), str) for header in headers):
+            raise ValueError(f"registry remote {index} has invalid headers")
+        cfg = {"url": url}
+        auth_headers = {header["name"]: "${MCP_GUARD_REGISTRY_SECRET}" for header in headers if header.get("isSecret") or header["name"].lower() in {"authorization", "proxy-authorization", "x-api-key", "api-key"}}
+        if auth_headers:
+            cfg["headers"] = auth_headers
+        name = _registry_server_name(registry_name, item, f"remote-{index + 1}")
+        if name in servers:
+            raise ValueError(f"duplicate registry server name: {name}")
+        servers[name] = cfg
+    if not servers:
+        raise ValueError("registry input contains no packages or remotes")
+    return servers
+
+
+def load_servers(path: Path, selector=None, input_format="mcp-json"):
     if path.is_symlink():
         raise ValueError("symlink input is not supported")
     if path.stat().st_size > MAX_INPUT_BYTES:
         raise ValueError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    if input_format not in INPUT_FORMATS:
+        raise ValueError(f"unsupported input format {input_format!r}; supported formats: {', '.join(INPUT_FORMATS)}")
     data = _parse_config(path)
+    if input_format == "registry":
+        if selector:
+            raise ValueError("--selector is only supported with mcp-json input")
+        return _load_registry_servers(data)
     candidates = []
     def walk(obj, where="$"):
         if isinstance(obj, dict):
@@ -136,8 +238,8 @@ def load_servers(path: Path, selector=None):
     return next(iter(by_path.values()))
 
 
-def scan_file(path: Path, selector=None):
-    servers = load_servers(path, selector=selector)
+def scan_file(path: Path, selector=None, input_format="mcp-json"):
+    servers = load_servers(path, selector=selector, input_format=input_format)
     findings = []
     for name, cfg in servers.items():
         if not isinstance(cfg, dict): continue
@@ -264,7 +366,7 @@ def _fails_threshold(findings, fail_on):
     return any(SEVERITY_RANK.get(finding.severity, 0) >= threshold for finding in findings)
 
 
-def _read_baseline(path, selector):
+def _read_baseline(path, selector, input_format="mcp-json"):
     old = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(old, dict):
         raise ValueError("baseline must be a JSON object")
@@ -273,6 +375,11 @@ def _read_baseline(path, selector):
         raise ValueError(f"unsupported baseline version: {version}")
     if version >= 2 and old.get("selector") != selector:
         raise ValueError(f"baseline selector mismatch: baseline has {old.get('selector')!r}, current scan has {selector!r}")
+    if version >= 2 and old.get("input_format", "mcp-json") != input_format:
+        raise ValueError(
+            f"baseline input format mismatch: baseline has {old.get('input_format', 'mcp-json')!r}, "
+            f"current scan has {input_format!r}"
+        )
     fingerprints = old.get("findings", [])
     if not isinstance(fingerprints, list) or any(not isinstance(item, str) for item in fingerprints):
         raise ValueError("baseline findings must be a list of strings")
@@ -283,21 +390,22 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
-    b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True); b.add_argument("--selector")
-    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True); b.add_argument("--selector"); b.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json")
+    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
     args = p.parse_args(argv)
     try:
-        findings = scan_file(Path(args.path), selector=args.selector)
+        known = _read_baseline(args.baseline, args.selector, args.input_format) if args.command == "diff" else None
+        findings = scan_file(Path(args.path), selector=args.selector, input_format=args.input_format)
         if args.command == "baseline":
-            Path(args.output).write_text(json.dumps({"version":2,"selector":args.selector,"findings":[f.fingerprint for f in findings]}, indent=2), encoding="utf-8"); return 0
+            Path(args.output).write_text(json.dumps({"version":2,"selector":args.selector,"input_format":args.input_format,"findings":[f.fingerprint for f in findings]}, indent=2), encoding="utf-8"); return 0
         if args.command == "diff":
-            known = _read_baseline(args.baseline, args.selector); findings = [f for f in findings if f.fingerprint not in known]
+            findings = [f for f in findings if f.fingerprint not in known]
             fmt = args.format
         else:
             fmt = args.format
             if args.baseline:
-                known = _read_baseline(args.baseline, args.selector); findings = [f for f in findings if f.fingerprint not in known]
+                known = _read_baseline(args.baseline, args.selector, args.input_format); findings = [f for f in findings if f.fingerprint not in known]
         text = as_json(findings) if fmt == "json" else as_sarif(findings, str(Path(args.path))) if fmt == "sarif" else as_markdown(findings)
         write_output(text, args.output)
         return 1 if _fails_threshold(findings, args.fail_on) else 0

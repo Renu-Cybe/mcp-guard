@@ -228,6 +228,7 @@ def test_action_contract():
     assert 'upload-sarif:' in action
     assert 'artifact-name:' in action
     assert 'selector:' in action
+    assert 'input-format:' in action
     assert 'fail-on:' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
 

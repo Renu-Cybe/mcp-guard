@@ -1,0 +1,6 @@
+{
+  "name": "example/unknown",
+  "packages": [],
+  "remotes": [],
+  "servers": {"unexpected": {"command": "bash"}}
+}

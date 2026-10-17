@@ -26,9 +26,11 @@ mcp-guard diff .mcp.json --baseline .mcp-guard-baseline.json --format markdown
 mcp-guard scan .mcp.json --fail-on medium
 # Select a nested server map when a file contains more than one
 mcp-guard scan settings.json --selector '$.config.mcpServers'
+# Explicit MCP Registry server.json subset (no network or execution)
+mcp-guard scan server.json --input-format registry --format sarif --output mcp-guard.sarif
 ```
 
-By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New baselines record the selected server-map path and require the same selector when reused; legacy version 1 baselines remain readable. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
+By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New baselines record the selected server-map path and input format and require both to match when reused; legacy version 1 baselines remain readable. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
 
@@ -43,10 +45,21 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.9
+      - uses: Renu-Cybe/mcp-guard@v0.2.0
         with:
           path: .mcp.json
           fail-on: medium
+
+```
+
+For a published MCP Registry `server.json`, opt into the explicit adapter:
+
+```yaml
+steps:
+  - uses: Renu-Cybe/mcp-guard@v0.2.0
+    with:
+      path: server.json
+      input-format: registry
 ```
 
 To publish findings to GitHub Code Scanning, grant `security-events: write` and opt in explicitly. The artifact upload remains enabled by default and can be disabled for private workflows.
@@ -57,7 +70,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.9
+  - uses: Renu-Cybe/mcp-guard@v0.2.0
     with:
       path: .mcp.json
       upload-sarif: true
@@ -66,7 +79,7 @@ steps:
 
 ## Scope and limitations
 
-This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Supported input formats are JSON and JSONC MCP server maps; registry `server.json`, `SKILL.md`, plugin manifests, SDK source files, and TOML files are rejected as unsupported inputs rather than treated as server maps. When several server maps are present, scanning stops until `--selector` identifies the intended map. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
+This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Supported input formats are JSON and JSONC MCP server maps. An explicit restricted MCP Registry `server.json` subset can be selected with `--input-format registry`; it parses only published `packages` (npm/PyPI with stdio transport) and `remotes` metadata (no network access or execution), maps declared secret environment/header inputs to placeholders, and rejects unknown fields or schema URIs. `SKILL.md`, plugin manifests, SDK source files, and TOML files remain unsupported. When several server maps are present, scanning stops until `--selector` identifies the intended map. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
 
 Loopback endpoints (`localhost`, `127.0.0.1`, and `::1`) are treated as local transports, which avoids flagging common browser-extension bridges for remote authentication or plaintext HTTP. Other private-network and cloud-metadata targets remain high-severity findings.
 

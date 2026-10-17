@@ -1,0 +1,4 @@
+{
+  "name": "example/public",
+  "remotes": [{"type": "sse", "url": "https://mcp.example.test/events"}]
+}

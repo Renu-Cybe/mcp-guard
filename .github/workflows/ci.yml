@@ -169,6 +169,56 @@ jobs:
           report = json.loads(Path("mcp-guard-d2-risk.sarif").read_text())
           assert {item["ruleId"] for item in report["runs"][0]["results"]} == {"MCPG004", "MCPG006"}
           PY
+      - name: Registry adapter keeps pinned package and OAuth remote clean
+        id: registry-safe
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/registry-pinned-clean.json
+          input-format: registry
+          output: mcp-guard-registry-safe.sarif
+          upload-artifact: false
+      - name: Registry adapter reports missing remote auth
+        id: registry-risk
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/registry-missing-auth.json
+          input-format: registry
+          fail-on: medium
+          output: mcp-guard-registry-risk.sarif
+          upload-artifact: false
+      - name: Verify registry adapter forwarding
+        if: always()
+        env:
+          REGISTRY_SAFE_OUTCOME: ${{ steps.registry-safe.outcome }}
+          REGISTRY_RISK_OUTCOME: ${{ steps.registry-risk.outcome }}
+        run: |
+          test "$REGISTRY_SAFE_OUTCOME" = success
+          test "$REGISTRY_RISK_OUTCOME" = failure
+          test -s mcp-guard-registry-safe.sarif
+          test -s mcp-guard-registry-risk.sarif
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          safe = json.loads(Path("mcp-guard-registry-safe.sarif").read_text())
+          risk = json.loads(Path("mcp-guard-registry-risk.sarif").read_text())
+          assert safe["runs"][0]["results"] == []
+          assert {item["ruleId"] for item in risk["runs"][0]["results"]} == {"MCPG006"}
+          assert risk["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] == "tests/corpus/fixtures/registry-missing-auth.json"
+          PY
+      - name: Registry adapter rejects unknown schema
+        id: registry-invalid
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/registry-unknown-schema.json
+          input-format: registry
+          upload-artifact: false
+      - name: Verify registry invalid input fails closed
+        env:
+          REGISTRY_INVALID_OUTCOME: ${{ steps.registry-invalid.outcome }}
+        run: test "$REGISTRY_INVALID_OUTCOME" = failure
 
   artifact-e2e:
     name: downloaded SARIF artifact

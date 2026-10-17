@@ -1,0 +1,4 @@
+{
+  "name": "example/broken",
+  "packages": {"registryType": "npm", "identifier": "example/mcp", "version": "1.0.0"}
+}

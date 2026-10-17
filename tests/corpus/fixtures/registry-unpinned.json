@@ -1,0 +1,4 @@
+{
+  "name": "example/unpinned",
+  "packages": [{"registryType": "npm", "identifier": "example/mcp-server"}]
+}
