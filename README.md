@@ -32,6 +32,27 @@ mcp-guard scan settings.json --selector '$.config.mcpServers'
 mcp-guard scan server.json --input-format registry --format sarif --output mcp-guard.sarif
 ```
 
+## Try it in 60 seconds
+
+The repository includes two sanitized fixtures so you can see both sides of the gate without starting a server or sending a network request:
+
+```bash
+python -m pip install .
+python -m mcp_guard.cli scan tests/fixtures/high-risk.json --format markdown --fail-on none
+```
+
+The high-risk fixture reports four findings: `MCPG001` (credential-like value), `MCPG002` (shell execution), `MCPG004` (private or cloud-metadata target), and `MCPG006` (missing visible remote authentication). Because `--fail-on none` makes any finding fail the gate, this command exits with status `1` after printing the report.
+
+For the clean path:
+
+```bash
+python -m mcp_guard.cli scan tests/fixtures/safe.json --format markdown --fail-on none
+```
+
+This prints `Findings: 0` and exits with status `0`. The fixtures are test data only; MCP Guard does not execute the configured command, install a server, or contact the configured URL.
+
+The first seven-day user-validation materials are in [`validation/targets.md`](validation/targets.md) and [`validation/validation-log.md`](validation/validation-log.md). They contain public repository candidates and local evidence records; no automatic outreach is performed.
+
 By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New single-file baselines use version 3, while multi-file `mcp-json` baselines use version 4 and include relative POSIX `source` paths with source-aware fingerprints. Sources are relative to the common parent of the explicit input files by default; pass `--source-root <directory>` to anchor them to a repository root. The source root must be a real directory containing every input, and is a runtime option rather than baseline metadata, so reuse the same value when applying a baseline. Changing the file set, root, or parent changes the baseline scope. Multi-file scans are capped at 64 files and 16 MiB total (2 MiB per file), sort inputs deterministically, and reject symlinks, directories, unsupported suffixes, and registry input. Each entry stores only review metadata and its fingerprint; evidence and credential-like input values are never copied into the baseline. Legacy version 1 and 2 fingerprint-list baselines remain readable for single-file scans. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
