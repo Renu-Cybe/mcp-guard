@@ -37,7 +37,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.2
+      - uses: Renu-Cybe/mcp-guard@v0.1.3
         with:
           path: .mcp.json
 ```
@@ -50,7 +50,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.2
+  - uses: Renu-Cybe/mcp-guard@v0.1.3
     with:
       path: .mcp.json
       upload-sarif: true
@@ -62,6 +62,10 @@ steps:
 This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Supported input formats are JSON and JSONC MCP server maps; registry `server.json`, `SKILL.md`, plugin manifests, SDK source files, and TOML files are rejected as unsupported inputs rather than treated as server maps. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
 
 Loopback endpoints (`localhost`, `127.0.0.1`, and `::1`) are treated as local transports, which avoids flagging common browser-extension bridges for remote authentication or plaintext HTTP. Other private-network and cloud-metadata targets remain high-severity findings.
+
+### D2 sample register
+
+`tests/corpus/manifest.json` records the 30 public D2 samples by repository, fixed commit, license, configuration shape, client, transport, and sensitivity. It is a metadata-only register: the project does not clone, execute, or redistribute third-party sample code. The 19 MCP-server rows define the current server-map boundary; registry, gateway, adapter, SDK, skill, and plugin rows remain explicit unsupported inputs until they have separate adapters and rules.
 
 ## Development
 

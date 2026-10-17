@@ -99,6 +99,28 @@ def test_arbitrary_headers_do_not_count_as_authentication(tmp_path):
     assert any(item['rule_id'] == 'MCPG006' for item in findings)
 
 
+def test_unrelated_metadata_token_does_not_count_as_authentication(tmp_path):
+    cfg = {'mcpServers': {'remote': {
+        'url':'https://example.test/mcp',
+        'metadata': {'token': '${NOT_AUTH}'},
+    }}}
+    f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
+    r = run('scan', str(f), '--format', 'json')
+    assert r.returncode == 0
+    assert any(item['rule_id'] == 'MCPG006' for item in json.loads(r.stdout))
+
+
+def test_inline_interpreter_execution_is_reported(tmp_path):
+    cfg = {'mcpServers': {
+        'python': {'command':'python', 'args':['-c', 'print(1)']},
+        'node': {'command':'node', 'args':['-e', 'console.log(1)']},
+    }}
+    f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
+    r = run('scan', str(f), '--format', 'json')
+    findings = json.loads(r.stdout)
+    assert {item['server'] for item in findings if item['rule_id'] == 'MCPG002'} == {'python', 'node'}
+
+
 def test_docker_network_none_is_safe_but_host_network_is_not(tmp_path):
     cfg = {'mcpServers': {
         'safe': {'command':'docker', 'args':['run', '--network=none', 'example/server:1.0']},

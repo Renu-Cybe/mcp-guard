@@ -8,6 +8,7 @@ from . import __version__
 SECRET = re.compile(r"(?i)(sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|bearer\s+[A-Za-z0-9._-]{12,}|(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+)")
 PRIVATE = re.compile(r"(?i)(169\.254\.169\.254|metadata\.google\.internal|localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)")
 DANGEROUS = re.compile(r"(?i)(^|[/\\\s])(sh|bash|zsh|fish|cmd|powershell|pwsh)(\.exe)?$|(^|\s)(-c|/c)(\s|$)")
+INLINE_EXEC = re.compile(r"(?i)(?:^|\s)(?:python(?:\d+(?:\.\d+)?)?|node|ruby|perl|php)\s+(?:-c|-e)\b")
 BROAD_PATH = re.compile(r"(^|[/\\])(?:\.ssh|\.aws|\.kube|etc|var[/\\]run)([/\\]|$)|^(?:/|[A-Za-z]:[\\/])$|^~(?:[/\\]|$)")
 UNPINNED = re.compile(r"(?i)(?:@latest$|\b(?:npm|pypi|github):[^@\s]+$)")
 EXECUTOR = re.compile(r"(?i)\b(?:npx|uvx|pipx|bunx)\s+(?:(?:-[^\s]+)\s+)*(?P<package>@?[\w.-]+(?:/[\w.-]+)?)(?:\s|$)")
@@ -150,7 +151,7 @@ def scan_file(path: Path):
         command_text = " ".join([cmd] + [str(x) for x in args])
         if _executor_unpinned(command_text):
             findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", "command", redact(command_text), "Pin an immutable version or commit and review updates deliberately.").finalize())
-        if DANGEROUS.search(cmd) or re.search(r"(?i)(?:^|\s)(?:sh|bash|cmd|powershell|pwsh)\s+-c\b", command_text):
+        if DANGEROUS.search(cmd) or re.search(r"(?i)(?:^|\s)(?:sh|bash|cmd|powershell|pwsh)\s+-c\b", command_text) or INLINE_EXEC.search(command_text):
             findings.append(Finding("MCPG002", "high", name, "Shell interpreter or inline command execution", "command", redact(command_text), "Use a fixed executable and explicit arguments; avoid shell evaluation.").finalize())
         url = cfg.get("url") or cfg.get("serverUrl") or cfg.get("endpoint")
         if isinstance(url, str) and urlparse(url).scheme in ("http", "https"):
@@ -177,7 +178,7 @@ def _has_auth_config(value):
                     return True
                 if isinstance(child, (dict, list)) and _has_auth_config(child):
                     return True
-            elif isinstance(child, (dict, list)) and _has_auth_config(child):
+            elif normalized in {"headers", "credentials"} and isinstance(child, (dict, list)) and _has_auth_config(child):
                 return True
     elif isinstance(value, list):
         return any(_has_auth_config(child) for child in value)
