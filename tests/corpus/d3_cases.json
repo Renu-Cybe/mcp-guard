@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "policy": "D3 sanitized public-configuration reproductions only; no third-party source, credentials, runtime execution, or network requests.",
+  "cases": [
+    {
+      "id": "d3-t01-github",
+      "sample_ids": ["MCP-003"],
+      "fixture": "d3-t01-github.json",
+      "expected_rules": ["MCPG006"],
+      "source": "https://github.com/github/github-mcp-server/blob/main/agent-plugin/mcp.json",
+      "rationale": "Sanitized reproduction of the tracked remote streamable-HTTP server map; host-managed OAuth is not visible in the file and must remain a review candidate."
+    },
+    {
+      "id": "d3-t02-playwright",
+      "sample_ids": ["MCP-004"],
+      "fixture": "d3-t02-playwright.json",
+      "expected_rules": ["MCPG005"],
+      "source": "https://github.com/microsoft/playwright-mcp/blob/main/README.md",
+      "rationale": "Sanitized reproduction of the documented npx stdio configuration; the latest package tag is intentionally reported as unpinned."
+    },
+    {
+      "id": "d3-t03-kubernetes",
+      "sample_ids": ["MCP-008"],
+      "fixture": "d3-t03-kubernetes.json",
+      "expected_rules": ["MCPG005"],
+      "source": "https://github.com/containers/kubernetes-mcp-server/blob/main/README.md",
+      "rationale": "Sanitized client JSON reproduction; the server's TOML and Kubernetes runtime permissions remain outside this fixture."
+    },
+    {
+      "id": "d3-t04-grafana",
+      "sample_ids": ["MCP-015"],
+      "fixture": "d3-t04-grafana.json",
+      "expected_rules": [],
+      "source": "https://github.com/grafana/mcp-grafana/blob/main/docs/sources/set-up/client-configuration-examples.md",
+      "rationale": "Sanitized stdio configuration with loopback URL and environment-backed token; it should remain clean without copying a credential."
+    },
+    {
+      "id": "d3-t05-firecrawl",
+      "sample_ids": ["MCP-019"],
+      "fixture": "d3-t05-firecrawl.json",
+      "expected_rules": ["MCPG005"],
+      "source": "https://github.com/firecrawl/firecrawl-mcp-server/blob/main/README.md",
+      "rationale": "Sanitized reproduction of the documented npx stdio/API-key reference; the package is not version-pinned while the environment reference is not a hardcoded secret."
+    }
+  ]
+}

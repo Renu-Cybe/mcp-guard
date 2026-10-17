@@ -227,6 +227,89 @@ jobs:
           report = json.loads(Path("mcp-guard-d2-risk.sarif").read_text())
           assert {item["ruleId"] for item in report["runs"][0]["results"]} == {"MCPG004", "MCPG006"}
           PY
+      - name: D3 GitHub remote fixture reports host-managed auth review
+        id: d3_t01_github
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/d3-t01-github.json
+          output: mcp-guard-d3-t01-github.sarif
+          fail-on: medium
+          upload-artifact: false
+      - name: D3 Playwright fixture reports unpinned package
+        id: d3_t02_playwright
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/d3-t02-playwright.json
+          output: mcp-guard-d3-t02-playwright.sarif
+          fail-on: medium
+          upload-artifact: false
+      - name: D3 Kubernetes fixture reports unpinned package
+        id: d3_t03_kubernetes
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/d3-t03-kubernetes.json
+          output: mcp-guard-d3-t03-kubernetes.sarif
+          fail-on: medium
+          upload-artifact: false
+      - name: D3 Grafana fixture stays clean with environment-backed token
+        id: d3_t04_grafana
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/d3-t04-grafana.json
+          output: mcp-guard-d3-t04-grafana.sarif
+          fail-on: medium
+          upload-artifact: false
+      - name: D3 Firecrawl fixture reports unpinned package
+        id: d3_t05_firecrawl
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/d3-t05-firecrawl.json
+          output: mcp-guard-d3-t05-firecrawl.sarif
+          fail-on: medium
+          upload-artifact: false
+      - name: Verify D3 action fixtures and SARIF rule attribution
+        if: always()
+        env:
+          D3_T01_OUTCOME: ${{ steps.d3_t01_github.outcome }}
+          D3_T02_OUTCOME: ${{ steps.d3_t02_playwright.outcome }}
+          D3_T03_OUTCOME: ${{ steps.d3_t03_kubernetes.outcome }}
+          D3_T04_OUTCOME: ${{ steps.d3_t04_grafana.outcome }}
+          D3_T05_OUTCOME: ${{ steps.d3_t05_firecrawl.outcome }}
+        run: |
+          test "$D3_T01_OUTCOME" = failure
+          test "$D3_T02_OUTCOME" = failure
+          test "$D3_T03_OUTCOME" = failure
+          test "$D3_T04_OUTCOME" = success
+          test "$D3_T05_OUTCOME" = failure
+          test -s mcp-guard-d3-t01-github.sarif
+          test -s mcp-guard-d3-t02-playwright.sarif
+          test -s mcp-guard-d3-t03-kubernetes.sarif
+          test -s mcp-guard-d3-t04-grafana.sarif
+          test -s mcp-guard-d3-t05-firecrawl.sarif
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          expected = {
+              "mcp-guard-d3-t01-github.sarif": {"MCPG006"},
+              "mcp-guard-d3-t02-playwright.sarif": {"MCPG005"},
+              "mcp-guard-d3-t03-kubernetes.sarif": {"MCPG005"},
+              "mcp-guard-d3-t04-grafana.sarif": set(),
+              "mcp-guard-d3-t05-firecrawl.sarif": {"MCPG005"},
+          }
+          for filename, rule_ids in expected.items():
+              report_text = Path(filename).read_text()
+              assert "YOUR_API_KEY" not in report_text
+              assert "GRAFANA_SERVICE_ACCOUNT_TOKEN}" not in report_text
+              assert "FIRECRAWL_API_KEY}" not in report_text
+              report = json.loads(report_text)
+              actual = {item["ruleId"] for item in report["runs"][0]["results"]}
+              assert actual == rule_ids, (filename, actual)
+          PY
       - name: Registry adapter keeps pinned package and OAuth remote clean
         id: registry-safe
         uses: ./
