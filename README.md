@@ -81,3 +81,5 @@ python -m pytest -q
 ```
 
 The public CI workflow tests the package on Ubuntu, Windows, and macOS with Python 3.10 and 3.13. It also builds and installs a wheel, runs the local GitHub Action against safe and high-risk fixtures, checks the failure gate, and downloads the uploaded SARIF artifact for a second verification job.
+
+After tag CI is green, dispatch the release workflow for a tag to attach wheel, source archive, and `SHA256SUMS` assets. It validates the tag and package version, defaults to a dry-run, and refuses to overwrite an existing asset with different content.
