@@ -71,6 +71,11 @@ def test_baseline_selector_mismatch_fails_closed_and_v1_remains_readable(tmp_pat
     assert readable.returncode == 1
     assert json.loads(readable.stdout)[0]['rule_id'] == 'MCPG005'
 
+    malformed = tmp_path/'malformed.json'; malformed.write_text('[]')
+    rejected = run('diff', str(f), '--baseline', str(malformed), '--selector', '$.config.mcpServers', '--format', 'json')
+    assert rejected.returncode == 2
+    assert 'baseline must be a JSON object' in rejected.stderr
+
 
 def test_sarif_uses_source_file_and_redacts_query_secret(tmp_path):
     cfg = {'mcpServers': {'remote': {'url':'https://example.test/mcp?token=not-a-real-token'}}}
@@ -188,6 +193,14 @@ def test_fail_on_can_promote_medium_findings_to_gate(tmp_path):
     assert default.returncode == 0
     strict = run('scan', str(f), '--format', 'json', '--fail-on', 'medium')
     assert strict.returncode == 1
+
+
+def test_fail_on_none_and_invalid_choice(tmp_path):
+    cfg = {'mcpServers': {'browser': {'command':'npx', 'args':['@playwright/mcp']}}}
+    f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
+    assert run('scan', str(f), '--format', 'json', '--fail-on', 'none').returncode == 1
+    invalid = run('scan', str(f), '--format', 'json', '--fail-on', 'critical')
+    assert invalid.returncode == 2
 
 
 def test_action_contract():

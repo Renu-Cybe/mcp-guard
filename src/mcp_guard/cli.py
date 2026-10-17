@@ -261,12 +261,17 @@ def _fails_threshold(findings, fail_on):
 
 def _read_baseline(path, selector):
     old = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(old, dict):
+        raise ValueError("baseline must be a JSON object")
     version = old.get("version", 1)
     if version not in {1, 2}:
         raise ValueError(f"unsupported baseline version: {version}")
     if version >= 2 and old.get("selector") != selector:
         raise ValueError(f"baseline selector mismatch: baseline has {old.get('selector')!r}, current scan has {selector!r}")
-    return set(old.get("findings", []))
+    fingerprints = old.get("findings", [])
+    if not isinstance(fingerprints, list) or any(not isinstance(item, str) for item in fingerprints):
+        raise ValueError("baseline findings must be a list of strings")
+    return set(fingerprints)
 
 
 def main(argv=None):
