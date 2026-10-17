@@ -10,6 +10,22 @@ inputs:
     description: SARIF output path
     required: false
     default: mcp-guard.sarif
+  artifact-name:
+    description: Uploaded artifact name
+    required: false
+    default: mcp-guard-sarif
+  upload-artifact:
+    description: Upload the SARIF file as a workflow artifact
+    required: false
+    default: 'true'
+  upload-sarif:
+    description: Upload the SARIF file to GitHub Code Scanning
+    required: false
+    default: 'false'
+  category:
+    description: Code Scanning category when upload-sarif is enabled
+    required: false
+    default: mcp-guard
 runs:
   using: composite
   steps:
@@ -26,10 +42,15 @@ runs:
         if [ "$status" -gt 1 ]; then
           exit "$status"
         fi
-    - if: always()
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+    - if: always() && inputs.upload-sarif == 'true' && steps.scan.outputs.status != '2'
+      uses: github/codeql-action/upload-sarif@ce5e7eeac396d720fe2d802714996c8ce561e311 # v3
       with:
-        name: mcp-guard-sarif
+        sarif_file: ${{ inputs.output }}
+        category: ${{ inputs.category }}
+    - if: always() && inputs.upload-artifact == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
         path: ${{ inputs.output }}
         if-no-files-found: error
     - if: steps.scan.outputs.status == '1'

@@ -11,6 +11,28 @@ permissions:
   contents: read
 
 jobs:
+  package-smoke:
+    name: package build and clean install
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - name: Build and validate distributions
+        run: |
+          python -m pip install --disable-pip-version-check build twine
+          python -m build
+          python -m twine check dist/*
+      - name: Install wheel in a clean environment
+        run: |
+          python -m venv smoke-venv
+          smoke-venv/bin/python -m pip install --disable-pip-version-check dist/*.whl
+          smoke-venv/bin/mcp-guard --version
+          smoke-venv/bin/python -c "import mcp_guard; print(mcp_guard.__version__)"
+
   test:
     name: pytest / ${{ matrix.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
@@ -21,9 +43,9 @@ jobs:
         python-version: ['3.10', '3.13']
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package and test tools
@@ -38,9 +60,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Python
-        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
       - name: Safe fixture has no findings

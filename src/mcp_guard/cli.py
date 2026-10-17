@@ -3,6 +3,7 @@ import argparse, hashlib, json, re, sys
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
+from . import __version__
 
 SECRET = re.compile(r"(?i)(sk-[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|bearer\s+[A-Za-z0-9._-]{12,}|(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+)")
 PRIVATE = re.compile(r"(?i)(169\.254\.169\.254|metadata\.google\.internal|localhost|127\.0\.0\.1|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+)")
@@ -236,7 +237,7 @@ def as_sarif(findings, source_path=None):
     for f in findings:
         rules.setdefault(f.rule_id, {"id": f.rule_id, "shortDescription": {"text": f.message}, "help": {"text": f.remediation}})
         results.append({"ruleId": f.rule_id, "level": "error" if f.severity == "high" else "warning", "message": {"text": f.message + ": " + redact(f.evidence)}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": source_uri or f.path}, "region": {"snippet": {"text": f.path}}}}], "fingerprints": {"mcpGuard/v1": f.fingerprint}})
-    return json.dumps({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"mcp-guard","version":"0.1.1","rules":list(rules.values())}},"results":results}]}, ensure_ascii=False, indent=2)
+    return json.dumps({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"mcp-guard","version":__version__,"rules":list(rules.values())}},"results":results}]}, ensure_ascii=False, indent=2)
 
 def write_output(text, output):
     if output: Path(output).write_text(text, encoding="utf-8")
@@ -244,6 +245,7 @@ def write_output(text, output):
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
     s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline")
     b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True)

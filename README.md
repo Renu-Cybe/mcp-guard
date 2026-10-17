@@ -9,6 +9,7 @@ MCP Guard is a local-first static checker for MCP and agent configuration. It is
 - Reads JSON or JSONC containing `mcpServers`, `mcp_servers`, or `servers`.
 - Runs nine high-confidence checks for credentials, shell execution, broad filesystem paths, private/cloud metadata targets, unpinned dependencies, missing remote authentication, wildcard permissions, broad Docker host access, and unencrypted remote HTTP. Baseline filtering is a separate workflow.
 - Emits JSON, Markdown, or SARIF.
+- Exposes the package version through `mcp-guard --version` and SARIF metadata.
 - The CLI does not start a server, install dependencies, or make network requests. The GitHub Action only uploads the generated SARIF artifact when configured to do so.
 
 ## Install and use
@@ -35,10 +36,25 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: Renu-Cybe/mcp-guard@v0.1.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Renu-Cybe/mcp-guard@v0.1.2
         with:
           path: .mcp.json
+```
+
+To publish findings to GitHub Code Scanning, grant `security-events: write` and opt in explicitly. The artifact upload remains enabled by default and can be disabled for private workflows.
+
+```yaml
+permissions:
+  contents: read
+  security-events: write
+
+steps:
+  - uses: Renu-Cybe/mcp-guard@v0.1.2
+    with:
+      path: .mcp.json
+      upload-sarif: true
+      artifact-name: mcp-guard-${{ github.job }}
 ```
 
 ## Scope and limitations
@@ -53,4 +69,4 @@ Loopback endpoints (`localhost`, `127.0.0.1`, and `::1`) are treated as local tr
 python -m pytest -q
 ```
 
-The public CI workflow tests the package on Ubuntu, Windows, and macOS with Python 3.10 and 3.13. It also runs the local GitHub Action against safe and high-risk fixtures, checks the failure gate, and downloads the uploaded SARIF artifact for a second verification job.
+The public CI workflow tests the package on Ubuntu, Windows, and macOS with Python 3.10 and 3.13. It also builds and installs a wheel, runs the local GitHub Action against safe and high-risk fixtures, checks the failure gate, and downloads the uploaded SARIF artifact for a second verification job.

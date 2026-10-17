@@ -1,5 +1,6 @@
-import json, subprocess, sys
+import json, re, subprocess, sys
 from pathlib import Path
+from mcp_guard import __version__
 
 ROOT = Path(__file__).parents[1]
 CLI = [sys.executable, '-m', 'mcp_guard.cli']
@@ -123,7 +124,23 @@ def test_action_contract():
     assert 'continue-on-error' not in action
     assert 'if: always()' in action
     assert 'actions/upload-artifact@' in action
+    assert 'github/codeql-action/upload-sarif@' in action
+    assert 'upload-artifact:' in action
+    assert 'upload-sarif:' in action
+    assert 'artifact-name:' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
+
+
+def test_version_is_consistent_across_package_cli_and_sarif(tmp_path):
+    metadata = re.search(r'^version\s*=\s*"([^"]+)"$', (ROOT / 'pyproject.toml').read_text(encoding='utf-8'), re.MULTILINE)
+    assert metadata and metadata.group(1) == __version__
+    version = run('--version')
+    assert version.returncode == 0
+    assert version.stdout.strip() == f'mcp-guard {__version__}'
+    f = tmp_path/'config.json'; f.write_text(json.dumps({'mcpServers': {'ok': {'command':'node', 'args':['server.js']}}}))
+    report = run('scan', str(f), '--format', 'sarif')
+    data = json.loads(report.stdout)
+    assert data['runs'][0]['tool']['driver']['version'] == __version__
 
 def test_rejects_symlink_input(tmp_path):
     target = tmp_path/'real.json'; target.write_text(json.dumps({'mcpServers': {}}))
