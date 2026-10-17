@@ -366,12 +366,58 @@ def _fails_threshold(findings, fail_on):
     return any(SEVERITY_RANK.get(finding.severity, 0) >= threshold for finding in findings)
 
 
+_BASELINE_V3_FIELDS = {
+    "fingerprint", "rule_id", "severity", "server", "path", "message", "remediation",
+}
+_BASELINE_V3_TOP_LEVEL = {"version", "selector", "input_format", "findings"}
+
+
+def _baseline_finding(finding):
+    """Return the review metadata persisted in a v3 baseline.
+
+    Evidence is intentionally excluded: a baseline is a durable project file and
+    must never become a second copy of credential-like input values.
+    """
+    return {
+        "fingerprint": finding.fingerprint,
+        "rule_id": finding.rule_id,
+        "severity": finding.severity,
+        "server": finding.server,
+        "path": finding.path,
+        "message": finding.message,
+        "remediation": finding.remediation,
+    }
+
+
+def _validate_baseline_v3_findings(findings):
+    if not isinstance(findings, list):
+        raise ValueError("baseline findings must be a list of objects for version 3")
+    fingerprints = set()
+    for index, item in enumerate(findings):
+        if not isinstance(item, dict):
+            raise ValueError(f"baseline finding {index} must be an object")
+        unknown = sorted(set(item) - _BASELINE_V3_FIELDS)
+        if unknown:
+            raise ValueError(f"baseline finding {index} has unsupported fields: {', '.join(unknown)}")
+        missing = sorted(_BASELINE_V3_FIELDS - set(item))
+        if missing:
+            raise ValueError(f"baseline finding {index} is missing fields: {', '.join(missing)}")
+        if any(not isinstance(item[field], str) or not item[field].strip() for field in _BASELINE_V3_FIELDS):
+            raise ValueError(f"baseline finding {index} fields must be non-empty strings")
+        if not re.fullmatch(r"[0-9a-f]{16}", item["fingerprint"]):
+            raise ValueError(f"baseline finding {index} has invalid fingerprint")
+        if item["severity"] not in SEVERITY_RANK or not re.fullmatch(r"MCPG\d{3}", item["rule_id"]):
+            raise ValueError(f"baseline finding {index} has invalid severity or rule_id")
+        fingerprints.add(item["fingerprint"])
+    return fingerprints
+
+
 def _read_baseline(path, selector, input_format="mcp-json"):
     old = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(old, dict):
         raise ValueError("baseline must be a JSON object")
     version = old.get("version", 1)
-    if version not in {1, 2}:
+    if isinstance(version, bool) or not isinstance(version, int) or version not in {1, 2, 3}:
         raise ValueError(f"unsupported baseline version: {version}")
     if version >= 2 and old.get("selector") != selector:
         raise ValueError(f"baseline selector mismatch: baseline has {old.get('selector')!r}, current scan has {selector!r}")
@@ -381,6 +427,15 @@ def _read_baseline(path, selector, input_format="mcp-json"):
             f"current scan has {input_format!r}"
         )
     fingerprints = old.get("findings", [])
+    if version == 3:
+        if set(old) != _BASELINE_V3_TOP_LEVEL:
+            raise ValueError("baseline version 3 must contain exactly version, selector, input_format, and findings")
+        if old.get("selector") is not None and not isinstance(old.get("selector"), str):
+            raise ValueError("baseline selector must be a string or null")
+        baseline_format = old.get("input_format")
+        if baseline_format not in INPUT_FORMATS:
+            raise ValueError(f"baseline input_format must be one of: {', '.join(INPUT_FORMATS)}")
+        return _validate_baseline_v3_findings(fingerprints)
     if not isinstance(fingerprints, list) or any(not isinstance(item, str) for item in fingerprints):
         raise ValueError("baseline findings must be a list of strings")
     return set(fingerprints)
@@ -398,7 +453,13 @@ def main(argv=None):
         known = _read_baseline(args.baseline, args.selector, args.input_format) if args.command == "diff" else None
         findings = scan_file(Path(args.path), selector=args.selector, input_format=args.input_format)
         if args.command == "baseline":
-            Path(args.output).write_text(json.dumps({"version":2,"selector":args.selector,"input_format":args.input_format,"findings":[f.fingerprint for f in findings]}, indent=2), encoding="utf-8"); return 0
+            baseline = {
+                "version": 3,
+                "selector": args.selector,
+                "input_format": args.input_format,
+                "findings": [_baseline_finding(f) for f in findings],
+            }
+            Path(args.output).write_text(json.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8"); return 0
         if args.command == "diff":
             findings = [f for f in findings if f.fingerprint not in known]
             fmt = args.format

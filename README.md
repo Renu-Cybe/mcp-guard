@@ -30,7 +30,7 @@ mcp-guard scan settings.json --selector '$.config.mcpServers'
 mcp-guard scan server.json --input-format registry --format sarif --output mcp-guard.sarif
 ```
 
-By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New baselines record the selected server-map path and input format and require both to match when reused; legacy version 1 baselines remain readable. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
+By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New baselines use version 3, record the selected server-map path and input format, and require both to match when reused. Each entry stores only review metadata and its fingerprint; evidence and credential-like input values are never copied into the baseline. Legacy version 1 and 2 fingerprint-list baselines remain readable. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
 
@@ -56,7 +56,7 @@ For a published MCP Registry `server.json`, opt into the explicit adapter:
 
 ```yaml
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.2.0
+  - uses: Renu-Cybe/mcp-guard@v0.2.1
     with:
       path: server.json
       input-format: registry
@@ -70,7 +70,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.2.0
+  - uses: Renu-Cybe/mcp-guard@v0.2.1
     with:
       path: .mcp.json
       upload-sarif: true

@@ -26,6 +26,50 @@ def test_sarif_and_baseline_diff(tmp_path):
     assert r.returncode == 0
     assert '"results": []' in r.stdout
 
+
+def test_baseline_v3_persists_review_metadata_without_evidence_or_secret(tmp_path):
+    secret = 'sk-1234567890abcdef1234'
+    cfg = {'mcpServers': {'private': {'env': {'API_KEY': secret}, 'url': 'https://example.test/mcp'}}}
+    source = tmp_path / 'config.json'; source.write_text(json.dumps(cfg))
+    baseline = tmp_path / 'baseline.json'
+    assert run('baseline', str(source), '--output', str(baseline)).returncode == 0
+    data = json.loads(baseline.read_text())
+    assert data['version'] == 3
+    assert data['selector'] is None
+    assert data['input_format'] == 'mcp-json'
+    assert data['findings']
+    assert all(set(item) == {'fingerprint', 'rule_id', 'severity', 'server', 'path', 'message', 'remediation'} for item in data['findings'])
+    assert all('evidence' not in item for item in data['findings'])
+    assert secret not in baseline.read_text()
+    assert run('diff', str(source), '--baseline', str(baseline), '--format', 'json').stdout.strip() == '[]'
+
+
+def test_baseline_v1_and_v2_fingerprint_lists_remain_readable(tmp_path):
+    cfg = {'mcpServers': {'browser': {'command': 'npx', 'args': ['@playwright/mcp']}}}
+    source = tmp_path / 'config.json'; source.write_text(json.dumps(cfg))
+    current = json.loads(run('scan', str(source), '--format', 'json').stdout)
+    fingerprint = current[0]['fingerprint']
+    for version, metadata in ((1, {}), (2, {'selector': None, 'input_format': 'mcp-json'})):
+        path = tmp_path / f'legacy-{version}.json'
+        path.write_text(json.dumps({'version': version, **metadata, 'findings': [fingerprint]}))
+        result = run('diff', str(source), '--baseline', str(path), '--format', 'json')
+        assert result.returncode == 0
+        assert json.loads(result.stdout) == []
+
+
+def test_malformed_v3_baseline_fails_closed(tmp_path):
+    source = tmp_path / 'config.json'; source.write_text(json.dumps({'mcpServers': {'safe': {'command': 'node'}}}))
+    cases = [
+        {'version': 3, 'selector': None, 'input_format': 'mcp-json', 'findings': ['legacy-string']},
+        {'version': 3, 'selector': None, 'input_format': 'mcp-json', 'findings': [{'fingerprint': 'x', 'rule_id': 'MCPG001'}]},
+        {'version': 3, 'selector': None, 'input_format': 'mcp-json', 'findings': [{'fingerprint': 'x', 'rule_id': 'MCPG001', 'severity': 'high', 'server': 'safe', 'path': 'env.API_KEY', 'message': 'credential', 'remediation': 'rotate', 'evidence': 'sk-secret'}]},
+    ]
+    for index, data in enumerate(cases):
+        path = tmp_path / f'malformed-{index}.json'; path.write_text(json.dumps(data))
+        result = run('diff', str(source), '--baseline', str(path), '--format', 'json')
+        assert result.returncode == 2
+        assert 'baseline' in result.stderr.lower()
+
 def test_nested_claude_format(tmp_path):
     cfg = {'config': {'mcpServers': {'remote': {'url':'https://example.test/mcp'}}}}
     f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
