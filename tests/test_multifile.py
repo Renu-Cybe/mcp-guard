@@ -189,3 +189,59 @@ def test_single_file_json_shape_and_fingerprint_remain_compatible(tmp_path):
     findings = json.loads(result.stdout)
     assert findings and all("source" not in item for item in findings)
     assert all(item["fingerprint"] == item["fingerprint"] for item in findings)
+
+
+def test_source_root_controls_repo_relative_sources_and_baseline_round_trip(tmp_path):
+    first = tmp_path / "packages" / "one" / "config.json"
+    second = tmp_path / "packages" / "two" / "config.json"
+    write_cfg(first, "bash")
+    write_cfg(second, "bash")
+    result = run("scan", str(first), str(second), "--source-root", str(tmp_path), "--format", "json")
+    assert result.returncode == 1
+    assert {item["source"] for item in json.loads(result.stdout)} == {
+        "packages/one/config.json", "packages/two/config.json"
+    }
+
+    baseline = tmp_path / "root-baseline.json"
+    assert run("baseline", str(first), str(second), "--source-root", str(tmp_path), "--output", str(baseline)).returncode == 0
+    assert run("diff", str(first), str(second), "--source-root", str(tmp_path), "--baseline", str(baseline), "--format", "json").stdout.strip() == "[]"
+    different_root = run("diff", str(first), str(second), "--source-root", str(tmp_path.parent), "--baseline", str(baseline), "--format", "json")
+    assert different_root.returncode == 2
+    assert "baseline sources mismatch" in different_root.stderr
+
+
+def test_source_root_rejects_invalid_roots_and_outside_inputs(tmp_path):
+    inside = tmp_path / "repo" / "one.json"
+    outside = tmp_path / "outside.json"
+    write_cfg(inside)
+    write_cfg(outside)
+    not_directory = tmp_path / "file-root"
+    not_directory.write_text("root", encoding="utf-8")
+
+    for root, expected in ((not_directory, "source root is not a regular directory"), (tmp_path / "missing", "source root is not a regular directory")):
+        result = run("scan", str(inside), str(outside), "--source-root", str(root), "--format", "json")
+        assert result.returncode == 2 and result.stdout == ""
+        assert expected in result.stderr
+
+    escaped = run("scan", str(inside), str(outside), "--source-root", str(tmp_path / "repo"), "--format", "json")
+    assert escaped.returncode == 2 and escaped.stdout == ""
+    assert "outside source root" in escaped.stderr
+
+    link = tmp_path / "repo-link"
+    try:
+        link.symlink_to(tmp_path / "repo", target_is_directory=True)
+    except (OSError, NotImplementedError):
+        link = None
+    if link is not None:
+        rejected = run("scan", str(inside), str(outside), "--source-root", str(link), "--format", "json")
+        assert rejected.returncode == 2 and rejected.stdout == ""
+        assert "source root symlink" in rejected.stderr
+
+
+def test_source_root_is_accepted_for_single_file_without_changing_output(tmp_path):
+    source = tmp_path / "one.json"
+    write_cfg(source, "bash")
+    plain = run("scan", str(source), "--format", "json")
+    rooted = run("scan", str(source), "--source-root", str(tmp_path), "--format", "json")
+    assert plain.returncode == rooted.returncode
+    assert plain.stdout == rooted.stdout

@@ -271,10 +271,21 @@ def test_action_contract():
     assert 'upload-artifact:' in action
     assert 'upload-sarif:' in action
     assert 'artifact-name:' in action
+    assert 'paths:' in action
     assert 'selector:' in action
     assert 'input-format:' in action
     assert 'fail-on:' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
+
+
+def test_action_paths_are_forwarded_as_literal_array_arguments():
+    action = (ROOT / 'action.yml').read_text(encoding='utf-8')
+    assert 'MCP_GUARD_PATHS:' in action
+    assert 'while IFS= read -r line' in action
+    assert 'scan_paths+=("$line")' in action
+    assert 'scan_command+=(-- "${scan_paths[@]}")' in action
+    assert 'scan_command+=(--source-root "$MCP_GUARD_SOURCE_ROOT")' in action
+    assert 'eval ' not in action
 
 
 def test_version_is_consistent_across_package_cli_and_sarif(tmp_path):

@@ -6,6 +6,10 @@ inputs:
     description: JSON or JSONC MCP configuration or explicit Registry server.json path
     required: false
     default: .mcp.json
+  paths:
+    description: Multiline list of JSON or JSONC MCP configuration paths; each non-empty line is one path
+    required: false
+    default: ''
   output:
     description: SARIF output path
     required: false
@@ -45,17 +49,37 @@ runs:
       shell: bash
       env:
         MCP_GUARD_PATH: ${{ inputs.path }}
+        MCP_GUARD_PATHS: ${{ inputs.paths }}
         MCP_GUARD_OUTPUT: ${{ inputs.output }}
         MCP_GUARD_SELECTOR: ${{ inputs.selector }}
         MCP_GUARD_INPUT_FORMAT: ${{ inputs.input-format }}
         MCP_GUARD_FAIL_ON: ${{ inputs.fail-on }}
+        MCP_GUARD_SOURCE_ROOT: ${{ github.workspace }}
       run: |
         set +e
-        if [ -n "$MCP_GUARD_SELECTOR" ]; then
-          PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT" --selector "$MCP_GUARD_SELECTOR" --input-format "$MCP_GUARD_INPUT_FORMAT" --fail-on "$MCP_GUARD_FAIL_ON"
-        else
-          PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT" --input-format "$MCP_GUARD_INPUT_FORMAT" --fail-on "$MCP_GUARD_FAIL_ON"
+        scan_paths=()
+        if [ -n "$MCP_GUARD_PATHS" ]; then
+          while IFS= read -r line || [ -n "$line" ]; do
+            if [[ "$line" =~ ^[[:space:]]*$ ]]; then
+              continue
+            fi
+            line=${line%$'\r'}
+            scan_paths+=("$line")
+          done <<< "$MCP_GUARD_PATHS"
         fi
+        if [ "${#scan_paths[@]}" -eq 0 ]; then
+          scan_paths+=("$MCP_GUARD_PATH")
+        fi
+        scan_command=(python -m mcp_guard.cli scan --format sarif --output "$MCP_GUARD_OUTPUT")
+        if [ -n "$MCP_GUARD_SELECTOR" ]; then
+          scan_command+=(--selector "$MCP_GUARD_SELECTOR")
+        fi
+        scan_command+=(--input-format "$MCP_GUARD_INPUT_FORMAT" --fail-on "$MCP_GUARD_FAIL_ON")
+        if [ "${#scan_paths[@]}" -gt 1 ]; then
+          scan_command+=(--source-root "$MCP_GUARD_SOURCE_ROOT")
+        fi
+        scan_command+=(-- "${scan_paths[@]}")
+        PYTHONPATH="${{ github.action_path }}/src" "${scan_command[@]}"
         status=$?
         echo "status=$status" >> "$GITHUB_OUTPUT"
         if [ "$status" -gt 1 ]; then

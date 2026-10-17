@@ -304,11 +304,31 @@ def _source_root(paths):
     return Path(os.path.commonpath([str(p.parent) for p in resolved]))
 
 
+def _validate_source_root(source_root, paths):
+    """Validate an explicit root and prove every input is beneath it.
+
+    The root is a runtime option only.  It is deliberately not persisted in a
+    baseline; the relative source set remains the portable scope binding.
+    """
+    root = Path(source_root)
+    if root.is_symlink():
+        raise ValueError("source root symlink is not supported")
+    if not root.exists() or not root.is_dir():
+        raise ValueError(f"source root is not a regular directory: {source_root}")
+    resolved_root = root.resolve()
+    for path in paths:
+        try:
+            path.resolve().relative_to(resolved_root)
+        except ValueError as exc:
+            raise ValueError(f"input is outside source root: {path}") from exc
+    return resolved_root
+
+
 def _source_name(path, root):
     return path.resolve().relative_to(root).as_posix()
 
 
-def scan_files(paths, selector=None, input_format="mcp-json"):
+def scan_files(paths, selector=None, input_format="mcp-json", source_root=None):
     """Scan a deterministic, bounded set of mcp-json files."""
     if input_format != "mcp-json" and len(paths) > 1:
         raise ValueError("multi-file scanning is only supported with mcp-json input")
@@ -328,7 +348,10 @@ def scan_files(paths, selector=None, input_format="mcp-json"):
     if total > MAX_TOTAL_INPUT_BYTES:
         raise ValueError(f"total input exceeds {MAX_TOTAL_INPUT_BYTES} bytes")
     ordered = sorted(normalized, key=lambda p: p.resolve().as_posix())
-    root = _source_root(ordered)
+    if source_root is None:
+        root = _source_root(ordered)
+    else:
+        root = _validate_source_root(source_root, ordered)
     findings = []
     for path in ordered:
         source = _source_name(path, root) if len(ordered) > 1 else ""
@@ -579,26 +602,28 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("scan"); s.add_argument("path", nargs="+"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
-    b = sub.add_parser("baseline"); b.add_argument("path", nargs="+"); b.add_argument("--output", required=True); b.add_argument("--selector"); b.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json")
-    d = sub.add_parser("diff"); d.add_argument("path", nargs="+"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    s = sub.add_parser("scan"); s.add_argument("path", nargs="+"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); s.add_argument("--source-root"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    b = sub.add_parser("baseline"); b.add_argument("path", nargs="+"); b.add_argument("--output", required=True); b.add_argument("--selector"); b.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); b.add_argument("--source-root")
+    d = sub.add_parser("diff"); d.add_argument("path", nargs="+"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); d.add_argument("--source-root"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
     args = p.parse_args(argv)
     try:
         multi = len(args.path) > 1
         known = _read_baseline(args.baseline, args.selector, args.input_format, multi=False) if args.command == "diff" and not multi else None
-        findings = scan_files([Path(p) for p in args.path], selector=args.selector, input_format=args.input_format)
+        source_root = Path(args.source_root) if args.source_root else None
+        findings = scan_files([Path(p) for p in args.path], selector=args.selector, input_format=args.input_format, source_root=source_root)
         current_sources = None
         if multi:
             normalized = sorted((Path(p) for p in args.path), key=lambda p: p.resolve().as_posix())
-            root = _source_root(normalized)
+            root = _validate_source_root(source_root, normalized) if source_root is not None else _source_root(normalized)
             current_sources = sorted(_source_name(p, root) for p in normalized)
         if args.command == "diff" and multi:
             known = _read_baseline(args.baseline, args.selector, args.input_format, multi=True, sources=current_sources)
         if args.command == "baseline":
             if multi:
                 normalized = [Path(p) for p in args.path]
-                root = _source_root(sorted(normalized, key=lambda p: p.resolve().as_posix()))
-                sources = sorted(_source_name(p, root) for p in normalized)
+                ordered = sorted(normalized, key=lambda p: p.resolve().as_posix())
+                root = _validate_source_root(source_root, ordered) if source_root is not None else _source_root(ordered)
+                sources = sorted(_source_name(p, root) for p in ordered)
                 baseline = {"version": 4, "scope": "multi-file", "selector": args.selector, "input_format": "mcp-json", "fingerprint_version": 2, "sources": sources, "findings": [_baseline_finding_v4(f) for f in findings]}
             else:
                 baseline = {"version": 3, "selector": args.selector, "input_format": args.input_format, "findings": [_baseline_finding(f) for f in findings]}
