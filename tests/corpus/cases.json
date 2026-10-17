@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "policy": "Sanitized local regressions only; no third-party source, credentials, or runtime execution.",
+  "cases": [
+    {"id": "d2-stdio-npx", "sample_ids": ["MCP-001", "MCP-004", "MCP-005", "MCP-007", "MCP-010", "MCP-014", "MCP-015", "MCP-018", "MCP-021"], "fixture": "stdio-npx.json", "expected_rules": ["MCPG005"], "rationale": "Representative stdio executor shape with an unpinned package."},
+    {"id": "d2-stdio-uvx", "sample_ids": ["MCP-016"], "fixture": "stdio-uvx.json", "expected_rules": ["MCPG005"], "rationale": "Covers the uvx executor spelling used by Python-oriented servers."},
+    {"id": "d2-remote-auth", "sample_ids": ["MCP-003", "MCP-006", "MCP-013", "MCP-020"], "fixture": "remote-auth.json", "expected_rules": [], "rationale": "Environment-backed bearer and header references must not trigger missing-auth findings."},
+    {"id": "d2-loopback-bridge", "sample_ids": ["MCP-012"], "fixture": "loopback-bridge.json", "expected_rules": [], "rationale": "Loopback browser bridges are local transports and need no remote-auth finding."},
+    {"id": "d2-private-metadata", "sample_ids": ["MCP-011"], "fixture": "private-metadata.json", "expected_rules": ["MCPG004", "MCPG006"], "rationale": "A metadata target is private and also lacks visible remote authentication."},
+    {"id": "d2-docker-host", "sample_ids": ["MCP-008"], "fixture": "docker-host.json", "expected_rules": ["MCPG003", "MCPG008"], "rationale": "Docker socket mounts expose a broad filesystem path and host control surface."},
+    {"id": "d2-pinned-safe", "sample_ids": ["MCP-009"], "fixture": "pinned-safe.json", "expected_rules": [], "rationale": "Pinned local execution with environment-backed credentials is a clean baseline."},
+    {"id": "d2-placeholder-secret", "sample_ids": ["MCP-019"], "fixture": "placeholder-secret.json", "expected_rules": ["MCPG001"], "rationale": "Credential-like placeholders must be reported without being copied into evidence."}
+  ]
+}

@@ -43,7 +43,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.8
+      - uses: Renu-Cybe/mcp-guard@v0.1.9
         with:
           path: .mcp.json
           fail-on: medium
@@ -57,7 +57,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.8
+  - uses: Renu-Cybe/mcp-guard@v0.1.9
     with:
       path: .mcp.json
       upload-sarif: true
@@ -72,7 +72,7 @@ Loopback endpoints (`localhost`, `127.0.0.1`, and `::1`) are treated as local tr
 
 ### D2 sample register
 
-`tests/corpus/manifest.json` records the 30 public D2 samples by repository, fixed commit, license, configuration shape, client, transport, and sensitivity. It is a metadata-only register: the project does not clone, execute, or redistribute third-party sample code. The 19 MCP-server rows define the current server-map boundary; registry, gateway, adapter, SDK, skill, and plugin rows remain explicit unsupported inputs until they have separate adapters and rules.
+`tests/corpus/manifest.json` records the 30 public D2 samples by repository, fixed commit, license, configuration shape, client, transport, and sensitivity. It is a metadata-only register: the project does not clone, execute, or redistribute third-party sample code. The 19 MCP-server rows define the current server-map boundary; registry, gateway, adapter, SDK, skill, and plugin rows remain explicit unsupported inputs until they have separate adapters and rules. `tests/corpus/cases.json` maps all 19 server-map rows to eight small, sanitized JSON/JSONC regressions. The cases cover stdio executors, remote authentication references, loopback bridges, metadata targets, Docker host access, pinned configurations, and credential redaction; each case records its expected rule set and rationale.
 
 ## Development
 

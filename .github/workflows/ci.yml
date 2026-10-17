@@ -130,6 +130,45 @@ jobs:
           report = json.loads(Path("mcp-guard-selector.sarif").read_text())
           assert {item["ruleId"] for item in report["runs"][0]["results"]} == {"MCPG005"}
           PY
+      - name: D2 authenticated remote fixture stays clean
+        id: d2-safe
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/remote-auth.json
+          output: mcp-guard-d2-safe.sarif
+          upload-artifact: false
+      - name: Verify D2 false-positive fixture
+        run: |
+          test -s mcp-guard-d2-safe.sarif
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("mcp-guard-d2-safe.sarif").read_text())
+          assert report["runs"][0]["results"] == []
+          PY
+      - name: D2 metadata fixture fails on high severity
+        id: d2-risk
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/corpus/fixtures/private-metadata.json
+          output: mcp-guard-d2-risk.sarif
+          upload-artifact: false
+      - name: Verify D2 risk fixture
+        if: always()
+        env:
+          D2_RISK_OUTCOME: ${{ steps.d2-risk.outcome }}
+        run: |
+          test "$D2_RISK_OUTCOME" = failure
+          test -s mcp-guard-d2-risk.sarif
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("mcp-guard-d2-risk.sarif").read_text())
+          assert {item["ruleId"] for item in report["runs"][0]["results"]} == {"MCPG004", "MCPG006"}
+          PY
 
   artifact-e2e:
     name: downloaded SARIF artifact

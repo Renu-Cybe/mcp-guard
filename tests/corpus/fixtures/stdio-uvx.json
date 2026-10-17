@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "python-tools": {
+      "command": "uvx",
+      "args": ["mcp-python-tools"]
+    }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "remote-env": {
+      "url": "https://api.example.test/mcp",
+      "headers": {"Authorization": "Bearer ${MCP_TOKEN}"}
+    },
+    "remote-header": {
+      "serverUrl": "https://service.example.test/mcp",
+      "headers": {"X-API-Key": "${MCP_API_KEY}"}
+    }
+  }
+}

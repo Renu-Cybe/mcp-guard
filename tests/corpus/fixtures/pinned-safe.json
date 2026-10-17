@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "pinned": {
+      "command": "npx",
+      "args": ["mcp-server-filesystem@1.2.3", "./workspace"],
+      "env": {"MCP_TOKEN": "${MCP_TOKEN}"}
+    }
+  }
+}

@@ -1,0 +1,8 @@
+{
+  // Browser extension bridge intentionally stays on loopback.
+  "mcpServers": {
+    "browser-bridge": {
+      "url": "http://127.0.0.1:9222/mcp"
+    }
+  }
+}

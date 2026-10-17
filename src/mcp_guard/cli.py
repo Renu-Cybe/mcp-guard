@@ -200,7 +200,11 @@ def _has_auth_value(value):
         return bool(value.strip())
     if isinstance(value, (dict, list)):
         return _has_auth_config(value)
-    return bool(value)
+    # Boolean/numeric flags describe whether auth is enabled, but carry no
+    # credential or token value that can authenticate a remote endpoint.
+    # Treating truthy primitives as auth caused `token: true` and `api_key: 1`
+    # to suppress MCPG006.
+    return False
 
 
 def _is_loopback_url(value):
