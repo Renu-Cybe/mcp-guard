@@ -4,6 +4,8 @@
 
 MCP Guard is a local-first static checker for MCP and agent configuration. It is intended as a release and CI gate, not a security certification.
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for safe fixture and rule changes. Use the [false-positive issue form](https://github.com/Renu-Cybe/mcp-guard/issues/new?template=false-positive.yml) for sanitized findings and [SECURITY.md](SECURITY.md) for private vulnerability reports.
+
 ## What it does
 
 - Reads JSON or JSONC containing `mcpServers`, `mcp_servers`, or `servers`.

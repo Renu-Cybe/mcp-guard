@@ -1,0 +1,32 @@
+name: Sample or format request
+description: Request support for a public MCP or agent configuration shape.
+title: "[Sample request]: "
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Public source URL
+      description: Link only to a public repository or specification; do not attach private configuration.
+    validations:
+      required: true
+  - type: input
+    id: format
+    attributes:
+      label: Configuration format
+      placeholder: JSON, JSONC, TOML, server.json, SKILL.md
+    validations:
+      required: true
+  - type: textarea
+    id: clients
+    attributes:
+      label: Client and transport
+      placeholder: Cursor; stdio or streamable HTTP
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Why this matters
+      description: Describe the adoption or security decision this would unlock.
+    validations:
+      required: true
