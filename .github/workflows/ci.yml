@@ -92,6 +92,22 @@ jobs:
           rule_ids = {item["ruleId"] for item in results}
           assert {"MCPG001", "MCPG002", "MCPG004"} <= rule_ids
           assert "not-a-real-secret" not in Path("mcp-guard-high-risk.sarif").read_text()
+      - name: Medium-only fixture fails when threshold is medium
+        id: medium-threshold
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/fixtures/medium-only.json
+          output: mcp-guard-medium.sarif
+          fail-on: medium
+          upload-artifact: false
+      - name: Verify configurable medium threshold
+        if: always()
+        env:
+          MEDIUM_OUTCOME: ${{ steps.medium-threshold.outcome }}
+        run: |
+          test "$MEDIUM_OUTCOME" = failure
+          test -s mcp-guard-medium.sarif
           PY
 
   artifact-e2e:

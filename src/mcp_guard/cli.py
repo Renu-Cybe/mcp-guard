@@ -21,6 +21,8 @@ AUTH_VALUE_KEYS = {
 }
 AUTH_QUERY_KEYS = AUTH_VALUE_KEYS | {"key", "password", "secret"}
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+SEVERITY_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
+FAIL_ON_CHOICES = ("none", "low", "medium", "high")
 
 
 def redact(value: str) -> str:
@@ -244,13 +246,18 @@ def write_output(text, output):
     if output: Path(output).write_text(text, encoding="utf-8")
     else: print(text)
 
+
+def _fails_threshold(findings, fail_on):
+    threshold = SEVERITY_RANK[fail_on]
+    return any(SEVERITY_RANK.get(finding.severity, 0) >= threshold for finding in findings)
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline")
+    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
     b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True)
-    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output")
+    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
     args = p.parse_args(argv)
     try:
         findings = scan_file(Path(args.path))
@@ -265,7 +272,7 @@ def main(argv=None):
                 old = json.loads(Path(args.baseline).read_text(encoding="utf-8")); known = set(old.get("findings", [])); findings = [f for f in findings if f.fingerprint not in known]
         text = as_json(findings) if fmt == "json" else as_sarif(findings, str(Path(args.path))) if fmt == "sarif" else as_markdown(findings)
         write_output(text, args.output)
-        return 1 if any(f.severity == "high" for f in findings) else 0
+        return 1 if _fails_threshold(findings, args.fail_on) else 0
     except (OSError, ValueError, json.JSONDecodeError) as e:
         print(f"mcp-guard: {e}", file=sys.stderr); return 2
 if __name__ == "__main__": raise SystemExit(main())

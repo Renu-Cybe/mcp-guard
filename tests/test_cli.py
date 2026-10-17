@@ -141,6 +141,16 @@ def test_complete_executor_command_has_one_unpinned_finding(tmp_path):
     findings = json.loads(r.stdout)
     assert [item['rule_id'] for item in findings] == ['MCPG005']
 
+
+def test_fail_on_can_promote_medium_findings_to_gate(tmp_path):
+    cfg = {'mcpServers': {'browser': {'command':'npx', 'args':['@playwright/mcp']}}}
+    f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
+    default = run('scan', str(f), '--format', 'json')
+    assert default.returncode == 0
+    strict = run('scan', str(f), '--format', 'json', '--fail-on', 'medium')
+    assert strict.returncode == 1
+
+
 def test_action_contract():
     action = (ROOT / 'action.yml').read_text(encoding='utf-8')
     assert 'continue-on-error' not in action
@@ -150,6 +160,7 @@ def test_action_contract():
     assert 'upload-artifact:' in action
     assert 'upload-sarif:' in action
     assert 'artifact-name:' in action
+    assert 'fail-on:' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
 
 

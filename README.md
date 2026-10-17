@@ -20,14 +20,16 @@ mcp-guard scan .mcp.json --format markdown
 mcp-guard scan .mcp.json --format sarif --output mcp-guard.sarif
 mcp-guard baseline .mcp.json --output .mcp-guard-baseline.json
 mcp-guard diff .mcp.json --baseline .mcp-guard-baseline.json --format markdown
+# Treat medium and high findings as a CI failure
+mcp-guard scan .mcp.json --fail-on medium
 ```
 
-A high-severity finding returns exit code 1. Invalid input returns 2. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
+By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid input returns 2. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
 
 Use the action from a tagged copy of this repository. It writes a SARIF file and uploads it as an artifact. It does not comment on pull requests, upload configuration to a service, auto-fix files, or grant write permissions.
-The artifact is uploaded before a high-severity result fails the job; invalid input fails the action as an error.
+The artifact is uploaded before the configured severity threshold fails the job; invalid input fails the action as an error. Set `fail-on: medium` to gate on medium and high findings.
 
 ```yaml
 jobs:
@@ -37,9 +39,10 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.3
+      - uses: Renu-Cybe/mcp-guard@v0.1.4
         with:
           path: .mcp.json
+          fail-on: medium
 ```
 
 To publish findings to GitHub Code Scanning, grant `security-events: write` and opt in explicitly. The artifact upload remains enabled by default and can be disabled for private workflows.
@@ -50,7 +53,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.3
+  - uses: Renu-Cybe/mcp-guard@v0.1.4
     with:
       path: .mcp.json
       upload-sarif: true

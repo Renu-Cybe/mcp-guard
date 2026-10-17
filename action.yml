@@ -26,6 +26,10 @@ inputs:
     description: Code Scanning category when upload-sarif is enabled
     required: false
     default: mcp-guard
+  fail-on:
+    description: Minimum severity that fails the action
+    required: false
+    default: high
 runs:
   using: composite
   steps:
@@ -34,9 +38,10 @@ runs:
       env:
         MCP_GUARD_PATH: ${{ inputs.path }}
         MCP_GUARD_OUTPUT: ${{ inputs.output }}
+        MCP_GUARD_FAIL_ON: ${{ inputs.fail-on }}
       run: |
         set +e
-        PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT"
+        PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT" --fail-on "$MCP_GUARD_FAIL_ON"
         status=$?
         echo "status=$status" >> "$GITHUB_OUTPUT"
         if [ "$status" -gt 1 ]; then
