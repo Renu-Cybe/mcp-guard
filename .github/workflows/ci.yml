@@ -92,6 +92,7 @@ jobs:
           rule_ids = {item["ruleId"] for item in results}
           assert {"MCPG001", "MCPG002", "MCPG004"} <= rule_ids
           assert "not-a-real-secret" not in Path("mcp-guard-high-risk.sarif").read_text()
+          PY
       - name: Medium-only fixture fails when threshold is medium
         id: medium-threshold
         continue-on-error: true
@@ -108,7 +109,6 @@ jobs:
         run: |
           test "$MEDIUM_OUTCOME" = failure
           test -s mcp-guard-medium.sarif
-          PY
 
   artifact-e2e:
     name: downloaded SARIF artifact
