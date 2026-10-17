@@ -258,6 +258,17 @@ def _fails_threshold(findings, fail_on):
     threshold = SEVERITY_RANK[fail_on]
     return any(SEVERITY_RANK.get(finding.severity, 0) >= threshold for finding in findings)
 
+
+def _read_baseline(path, selector):
+    old = json.loads(Path(path).read_text(encoding="utf-8"))
+    version = old.get("version", 1)
+    if version not in {1, 2}:
+        raise ValueError(f"unsupported baseline version: {version}")
+    if version >= 2 and old.get("selector") != selector:
+        raise ValueError(f"baseline selector mismatch: baseline has {old.get('selector')!r}, current scan has {selector!r}")
+    return set(old.get("findings", []))
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
@@ -269,14 +280,14 @@ def main(argv=None):
     try:
         findings = scan_file(Path(args.path), selector=args.selector)
         if args.command == "baseline":
-            Path(args.output).write_text(json.dumps({"version":1,"findings":[f.fingerprint for f in findings]}, indent=2), encoding="utf-8"); return 0
+            Path(args.output).write_text(json.dumps({"version":2,"selector":args.selector,"findings":[f.fingerprint for f in findings]}, indent=2), encoding="utf-8"); return 0
         if args.command == "diff":
-            old = json.loads(Path(args.baseline).read_text(encoding="utf-8")); known = set(old.get("findings", [])); findings = [f for f in findings if f.fingerprint not in known]
+            known = _read_baseline(args.baseline, args.selector); findings = [f for f in findings if f.fingerprint not in known]
             fmt = args.format
         else:
             fmt = args.format
             if args.baseline:
-                old = json.loads(Path(args.baseline).read_text(encoding="utf-8")); known = set(old.get("findings", [])); findings = [f for f in findings if f.fingerprint not in known]
+                known = _read_baseline(args.baseline, args.selector); findings = [f for f in findings if f.fingerprint not in known]
         text = as_json(findings) if fmt == "json" else as_sarif(findings, str(Path(args.path))) if fmt == "sarif" else as_markdown(findings)
         write_output(text, args.output)
         return 1 if _fails_threshold(findings, args.fail_on) else 0

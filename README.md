@@ -28,7 +28,7 @@ mcp-guard scan .mcp.json --fail-on medium
 mcp-guard scan settings.json --selector '$.config.mcpServers'
 ```
 
-By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
+By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New baselines record the selected server-map path and require the same selector when reused; legacy version 1 baselines remain readable. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
 
@@ -43,7 +43,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.5
+      - uses: Renu-Cybe/mcp-guard@v0.1.6
         with:
           path: .mcp.json
           fail-on: medium
@@ -57,7 +57,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.5
+  - uses: Renu-Cybe/mcp-guard@v0.1.6
     with:
       path: .mcp.json
       upload-sarif: true

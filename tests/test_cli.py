@@ -57,6 +57,21 @@ def test_selector_fails_closed_on_ambiguous_maps_and_scopes_baseline(tmp_path):
     assert json.loads(diff.stdout) == []
 
 
+def test_baseline_selector_mismatch_fails_closed_and_v1_remains_readable(tmp_path):
+    cfg = {'config': {'mcpServers': {'browser': {'command': 'npx', 'args': ['@playwright/mcp']}}}}
+    f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
+    base = tmp_path/'base.json'
+    assert run('baseline', str(f), '--selector', '$.config.mcpServers', '--output', str(base)).returncode == 0
+    mismatch = run('diff', str(f), '--baseline', str(base), '--format', 'json')
+    assert mismatch.returncode == 2
+    assert 'baseline selector mismatch' in mismatch.stderr
+
+    legacy = tmp_path/'legacy.json'; legacy.write_text(json.dumps({'version': 1, 'findings': []}))
+    readable = run('diff', str(f), '--baseline', str(legacy), '--selector', '$.config.mcpServers', '--format', 'json', '--fail-on', 'medium')
+    assert readable.returncode == 1
+    assert json.loads(readable.stdout)[0]['rule_id'] == 'MCPG005'
+
+
 def test_sarif_uses_source_file_and_redacts_query_secret(tmp_path):
     cfg = {'mcpServers': {'remote': {'url':'https://example.test/mcp?token=not-a-real-token'}}}
     f = tmp_path/'config.json'; f.write_text(json.dumps(cfg))
