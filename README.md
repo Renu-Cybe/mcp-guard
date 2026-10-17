@@ -22,6 +22,8 @@ mcp-guard scan .mcp.json --format markdown
 mcp-guard scan .mcp.json --format sarif --output mcp-guard.sarif
 mcp-guard baseline .mcp.json --output .mcp-guard-baseline.json
 mcp-guard diff .mcp.json --baseline .mcp-guard-baseline.json --format markdown
+# Bounded multi-file scan (mcp-json only)
+mcp-guard scan configs/a.json configs/b.json --format sarif --output mcp-guard.sarif
 # Treat medium and high findings as a CI failure
 mcp-guard scan .mcp.json --fail-on medium
 # Select a nested server map when a file contains more than one
@@ -30,9 +32,11 @@ mcp-guard scan settings.json --selector '$.config.mcpServers'
 mcp-guard scan server.json --input-format registry --format sarif --output mcp-guard.sarif
 ```
 
-By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New baselines use version 3, record the selected server-map path and input format, and require both to match when reused. Each entry stores only review metadata and its fingerprint; evidence and credential-like input values are never copied into the baseline. Legacy version 1 and 2 fingerprint-list baselines remain readable. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
+By default, high-severity findings return exit code 1. Use `--fail-on medium` (or `low`/`none`) to make the gate stricter; `none` fails whenever any finding exists. Invalid or ambiguous input returns 2. If a file contains multiple supported server maps, pass the exact JSON selector shown in the error, such as `$.config.mcpServers`. New single-file baselines use version 3, while multi-file `mcp-json` baselines use version 4 and include relative POSIX `source` paths with source-aware fingerprints. Sources are relative to the common parent of the explicit input files, so changing that file set or parent changes the baseline scope. Multi-file scans are capped at 64 files and 16 MiB total (2 MiB per file), sort inputs deterministically, and reject symlinks, directories, unsupported suffixes, and registry input. Each entry stores only review metadata and its fingerprint; evidence and credential-like input values are never copied into the baseline. Legacy version 1 and 2 fingerprint-list baselines remain readable for single-file scans. Reports contain fingerprints so a baseline can suppress previously reviewed findings.
 
 ## GitHub Action
+
+The v0.3.0 action input `path` remains a single JSON/JSONC or Registry file. Use the CLI examples above for explicit multi-file scans; whitespace-separated paths are not expanded by the action.
 
 Use the action from a tagged copy of this repository. It writes a SARIF file and uploads it as an artifact. It does not comment on pull requests, upload configuration to a service, auto-fix files, or grant write permissions.
 The artifact is uploaded before the configured severity threshold fails the job; invalid input fails the action as an error. Set `fail-on: medium` to gate on medium and high findings.
@@ -45,7 +49,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.2.0
+      - uses: Renu-Cybe/mcp-guard@v0.3.0
         with:
           path: .mcp.json
           fail-on: medium
@@ -56,7 +60,7 @@ For a published MCP Registry `server.json`, opt into the explicit adapter:
 
 ```yaml
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.2.1
+  - uses: Renu-Cybe/mcp-guard@v0.3.0
     with:
       path: server.json
       input-format: registry
@@ -70,7 +74,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.2.1
+  - uses: Renu-Cybe/mcp-guard@v0.3.0
     with:
       path: .mcp.json
       upload-sarif: true

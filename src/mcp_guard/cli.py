@@ -1,7 +1,7 @@
 from __future__ import annotations
-import argparse, hashlib, json, re, sys
+import argparse, hashlib, json, re, sys, os
 from dataclasses import dataclass, asdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import parse_qsl, urlparse
 from . import __version__
 
@@ -14,6 +14,8 @@ UNPINNED = re.compile(r"(?i)(?:@latest$|\b(?:npm|pypi|github):[^@\s]+$)")
 EXECUTOR = re.compile(r"(?i)\b(?:npx|uvx|pipx|bunx)\s+(?:(?:-[^\s]+)\s+)*(?P<package>@?[\w.-]+(?:/[\w.-]+)?(?:@[\w.+-]+)?)(?:\s|$)")
 WILDCARD = re.compile(r"(^|[\s,])\*($|[\s,])")
 MAX_INPUT_BYTES = 2 * 1024 * 1024
+MAX_INPUT_FILES = 64
+MAX_TOTAL_INPUT_BYTES = 16 * 1024 * 1024
 SUPPORTED_SUFFIXES = {".json", ".jsonc"}
 INPUT_FORMATS = ("mcp-json", "registry")
 AUTH_VALUE_KEYS = {
@@ -56,8 +58,16 @@ class Finding:
     evidence: str
     remediation: str
     fingerprint: str = ""
-    def finalize(self):
+    source: str = ""
+    fingerprint_version: int = 1
+    def finalize(self, source=None, fingerprint_version=None):
+        if source is not None:
+            self.source = source
+        if fingerprint_version is not None:
+            self.fingerprint_version = fingerprint_version
         raw = f"{self.rule_id}|{self.server}|{self.path}|{self.evidence}"
+        if self.fingerprint_version >= 2:
+            raw = f"v2|{self.source}|{raw}"
         self.fingerprint = hashlib.sha256(raw.encode()).hexdigest()[:16]
         return self
 
@@ -207,10 +217,7 @@ def _load_registry_servers(data):
 
 
 def load_servers(path: Path, selector=None, input_format="mcp-json"):
-    if path.is_symlink():
-        raise ValueError("symlink input is not supported")
-    if path.stat().st_size > MAX_INPUT_BYTES:
-        raise ValueError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    _validate_input_path(path)
     if input_format not in INPUT_FORMATS:
         raise ValueError(f"unsupported input format {input_format!r}; supported formats: {', '.join(INPUT_FORMATS)}")
     data = _parse_config(path)
@@ -238,7 +245,20 @@ def load_servers(path: Path, selector=None, input_format="mcp-json"):
     return next(iter(by_path.values()))
 
 
-def scan_file(path: Path, selector=None, input_format="mcp-json"):
+def _validate_input_path(path: Path):
+    if path.is_symlink():
+        raise ValueError("symlink input is not supported")
+    if not path.is_file():
+        raise ValueError(f"input is not a regular file: {path}")
+    if path.suffix.lower() not in SUPPORTED_SUFFIXES:
+        raise ValueError(f"unsupported config format {path.suffix}; supported formats: JSON, JSONC")
+    size = path.stat().st_size
+    if size > MAX_INPUT_BYTES:
+        raise ValueError(f"input exceeds {MAX_INPUT_BYTES} bytes")
+    return size
+
+
+def scan_file(path: Path, selector=None, input_format="mcp-json", source="", fingerprint_version=1):
     servers = load_servers(path, selector=selector, input_format=input_format)
     findings = []
     for name, cfg in servers.items():
@@ -249,34 +269,71 @@ def scan_file(path: Path, selector=None, input_format="mcp-json"):
             sensitive_key = key in {"password", "passwd", "secret", "token", "api_key", "apikey", "authorization", "access_key", "private_key", "client_secret", "refresh_token"}
             variable_ref = bool(re.fullmatch(r"\s*(?:[A-Za-z][A-Za-z0-9_-]*\s+)?\$\{[^}]+}\s*", val)) or _url_has_variable_auth(val)
             if (SECRET.search(val) or (sensitive_key and bool(val.strip()))) and not variable_ref:
-                findings.append(Finding("MCPG001", "high", name, "Possible hardcoded credential", p, "credential-like value redacted", "Use environment references or a secret manager; do not commit credentials.").finalize())
+                findings.append(Finding("MCPG001", "high", name, "Possible hardcoded credential", p, "credential-like value redacted", "Use environment references or a secret manager; do not commit credentials.").finalize(source, fingerprint_version))
             if PRIVATE.search(val) and ("url" in p.lower() or "host" in p.lower() or "endpoint" in p.lower()) and not _is_loopback_url(val):
-                findings.append(Finding("MCPG004", "high", name, "Private or cloud-metadata network target", p, redact(val), "Review network target and block metadata/private access unless explicitly required.").finalize())
+                findings.append(Finding("MCPG004", "high", name, "Private or cloud-metadata network target", p, redact(val), "Review network target and block metadata/private access unless explicitly required.").finalize(source, fingerprint_version))
             if BROAD_PATH.search(val) and ("arg" in p.lower() or "path" in p.lower() or "directory" in p.lower()):
-                findings.append(Finding("MCPG003", "high", name, "Broad or sensitive filesystem path", p, redact(val), "Scope filesystem access to a dedicated project directory.").finalize())
+                findings.append(Finding("MCPG003", "high", name, "Broad or sensitive filesystem path", p, redact(val), "Scope filesystem access to a dedicated project directory.").finalize(source, fingerprint_version))
             if UNPINNED.search(val):
-                findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", p, redact(val), "Pin an immutable version or commit and review updates deliberately.").finalize())
+                findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", p, redact(val), "Pin an immutable version or commit and review updates deliberately.").finalize(source, fingerprint_version))
             if WILDCARD.search(val) and any(k in p.lower() for k in ("tool", "permission", "allow", "scope")):
-                findings.append(Finding("MCPG007", "high", name, "Wildcard tool or permission scope", p, redact(val), "Replace wildcard access with an explicit least-privilege allowlist.").finalize())
+                findings.append(Finding("MCPG007", "high", name, "Wildcard tool or permission scope", p, redact(val), "Replace wildcard access with an explicit least-privilege allowlist.").finalize(source, fingerprint_version))
         cmd = str(cfg.get("command", ""))
         args = cfg.get("args", [])
         command_text = " ".join([cmd] + [str(x) for x in args])
         if _executor_unpinned(command_text):
-            findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", "command", redact(command_text), "Pin an immutable version or commit and review updates deliberately.").finalize())
+            findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", "command", redact(command_text), "Pin an immutable version or commit and review updates deliberately.").finalize(source, fingerprint_version))
         if DANGEROUS.search(cmd) or re.search(r"(?i)(?:^|\s)(?:sh|bash|cmd|powershell|pwsh)\s+-c\b", command_text) or INLINE_EXEC.search(command_text):
-            findings.append(Finding("MCPG002", "high", name, "Shell interpreter or inline command execution", "command", redact(command_text), "Use a fixed executable and explicit arguments; avoid shell evaluation.").finalize())
+            findings.append(Finding("MCPG002", "high", name, "Shell interpreter or inline command execution", "command", redact(command_text), "Use a fixed executable and explicit arguments; avoid shell evaluation.").finalize(source, fingerprint_version))
         url = cfg.get("url") or cfg.get("serverUrl") or cfg.get("endpoint")
         if isinstance(url, str) and urlparse(url).scheme in ("http", "https"):
             loopback = _is_loopback_url(url)
             auth = _has_auth_config(cfg) or _url_has_auth_config(url)
             if not auth and not loopback:
-                findings.append(Finding("MCPG006", "medium", name, "Remote MCP endpoint has no visible authentication configuration", "url", redact(url), "Require explicit authentication and validate token audience at the client boundary.").finalize())
+                findings.append(Finding("MCPG006", "medium", name, "Remote MCP endpoint has no visible authentication configuration", "url", redact(url), "Require explicit authentication and validate token audience at the client boundary.").finalize(source, fingerprint_version))
             if urlparse(url).scheme == "http" and not loopback and not PRIVATE.search(url):
-                findings.append(Finding("MCPG009", "high", name, "Remote MCP endpoint uses unencrypted HTTP", "url", redact(url), "Use HTTPS or an explicitly isolated local transport.").finalize())
+                findings.append(Finding("MCPG009", "high", name, "Remote MCP endpoint uses unencrypted HTTP", "url", redact(url), "Use HTTPS or an explicitly isolated local transport.").finalize(source, fingerprint_version))
         docker_text = " ".join([str(cfg.get("command", ""))] + [str(x) for x in cfg.get("args", [])])
         if re.search(r"(?i)(--privileged|/var/run/docker\.sock|--network(?:=|\s+)host)", docker_text):
-            findings.append(Finding("MCPG008", "high", name, "Container configuration grants broad host access", "args", redact(docker_text), "Drop privileged, host-network, and Docker socket access unless it is explicitly required.").finalize())
-    return findings
+            findings.append(Finding("MCPG008", "high", name, "Container configuration grants broad host access", "args", redact(docker_text), "Drop privileged, host-network, and Docker socket access unless it is explicitly required.").finalize(source, fingerprint_version))
+    return sorted(findings, key=lambda f: (f.source, f.rule_id, f.server, f.path, f.evidence))
+
+
+def _source_root(paths):
+    resolved = [p.resolve() for p in paths]
+    return Path(os.path.commonpath([str(p.parent) for p in resolved]))
+
+
+def _source_name(path, root):
+    return path.resolve().relative_to(root).as_posix()
+
+
+def scan_files(paths, selector=None, input_format="mcp-json"):
+    """Scan a deterministic, bounded set of mcp-json files."""
+    if input_format != "mcp-json" and len(paths) > 1:
+        raise ValueError("multi-file scanning is only supported with mcp-json input")
+    if not paths:
+        raise ValueError("at least one input path is required")
+    if len(paths) > MAX_INPUT_FILES:
+        raise ValueError(f"too many input files; maximum is {MAX_INPUT_FILES}")
+    normalized = [Path(p) for p in paths]
+    seen = set()
+    total = 0
+    for path in normalized:
+        resolved = path.resolve()
+        if resolved in seen:
+            raise ValueError(f"duplicate input path: {path}")
+        seen.add(resolved)
+        total += _validate_input_path(path)
+    if total > MAX_TOTAL_INPUT_BYTES:
+        raise ValueError(f"total input exceeds {MAX_TOTAL_INPUT_BYTES} bytes")
+    ordered = sorted(normalized, key=lambda p: p.resolve().as_posix())
+    root = _source_root(ordered)
+    findings = []
+    for path in ordered:
+        source = _source_name(path, root) if len(ordered) > 1 else ""
+        findings.extend(scan_file(path, selector=selector, input_format=input_format, source=source, fingerprint_version=2 if len(ordered) > 1 else 1))
+    return sorted(findings, key=lambda f: (f.source, f.rule_id, f.server, f.path, f.evidence))
 
 
 def _has_auth_config(value):
@@ -335,10 +392,28 @@ def _url_has_variable_auth(value):
         return False
 
 
-def as_json(findings): return json.dumps([asdict(f) for f in findings], ensure_ascii=False, indent=2)
+def _multi(findings):
+    return any(f.source for f in findings) or any(f.fingerprint_version >= 2 for f in findings)
+
+
+def _finding_dict(f, multi=None):
+    data = asdict(f)
+    data.pop("fingerprint_version", None)
+    if not (multi if multi is not None else _multi([f])):
+        data.pop("source", None)
+    return data
+
+
+def as_json(findings): return json.dumps([_finding_dict(f) for f in findings], ensure_ascii=False, indent=2)
 def as_markdown(findings):
-    lines = ["# MCP Guard report", "", f"Findings: {len(findings)}", "", "| Severity | Rule | Server | Location | Message |", "|---|---|---|---|---|"]
-    for f in findings: lines.append(f"| {f.severity} | {f.rule_id} | `{f.server}` | `{f.path}` | {f.message} |")
+    multi = _multi(findings)
+    lines = ["# MCP Guard report", "", f"Findings: {len(findings)}", ""]
+    if multi:
+        lines.extend(["| Severity | Rule | Source | Server | Location | Message |", "|---|---|---|---|---|---|"])
+        for f in findings: lines.append(f"| {f.severity} | {f.rule_id} | `{f.source}` | `{f.server}` | `{f.path}` | {f.message} |")
+    else:
+        lines.extend(["| Severity | Rule | Server | Location | Message |", "|---|---|---|---|---|"])
+        for f in findings: lines.append(f"| {f.severity} | {f.rule_id} | `{f.server}` | `{f.path}` | {f.message} |")
     return "\n".join(lines) + "\n"
 def as_sarif(findings, source_path=None):
     rules = {}
@@ -353,7 +428,9 @@ def as_sarif(findings, source_path=None):
         source_uri = None
     for f in findings:
         rules.setdefault(f.rule_id, {"id": f.rule_id, "shortDescription": {"text": f.message}, "help": {"text": f.remediation}, "properties": {"security-severity": SARIF_SECURITY_SEVERITY.get(f.severity, "0.0")}})
-        results.append({"ruleId": f.rule_id, "level": "error" if f.severity == "high" else "warning", "message": {"text": f.message + ": " + redact(f.evidence)}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": source_uri or f.path}, "region": {"snippet": {"text": f.path}}}}], "fingerprints": {"mcpGuard/v1": f.fingerprint}})
+        uri = f.source or source_uri or f.path
+        key = "mcpGuard/v2" if f.fingerprint_version >= 2 else "mcpGuard/v1"
+        results.append({"ruleId": f.rule_id, "level": "error" if f.severity == "high" else "warning", "message": {"text": f.message + ": " + redact(f.evidence)}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}, "region": {"snippet": {"text": f.path}}}}], "fingerprints": {key: f.fingerprint}})
     return json.dumps({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"mcp-guard","version":__version__,"rules":list(rules.values())}},"results":results}]}, ensure_ascii=False, indent=2)
 
 def write_output(text, output):
@@ -389,6 +466,12 @@ def _baseline_finding(finding):
     }
 
 
+def _baseline_finding_v4(finding):
+    item = _baseline_finding(finding)
+    item["source"] = finding.source
+    return item
+
+
 def _validate_baseline_v3_findings(findings):
     if not isinstance(findings, list):
         raise ValueError("baseline findings must be a list of objects for version 3")
@@ -412,12 +495,63 @@ def _validate_baseline_v3_findings(findings):
     return fingerprints
 
 
-def _read_baseline(path, selector, input_format="mcp-json"):
+def _read_baseline(path, selector, input_format="mcp-json", multi=False, sources=None):
     old = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(old, dict):
         raise ValueError("baseline must be a JSON object")
     version = old.get("version", 1)
-    if isinstance(version, bool) or not isinstance(version, int) or version not in {1, 2, 3}:
+    if isinstance(version, bool) or not isinstance(version, int) or version not in {1, 2, 3, 4}:
+        raise ValueError(f"unsupported baseline version: {version}")
+    if version == 4:
+        if not multi:
+            raise ValueError("baseline version 4 requires multi-file input")
+        if old.get("scope") != "multi-file":
+            raise ValueError("baseline version 4 must have multi-file scope")
+        if input_format != "mcp-json" or old.get("input_format") != "mcp-json":
+            raise ValueError("multi-file baseline requires mcp-json input")
+        if set(old) != {"version", "scope", "selector", "input_format", "fingerprint_version", "sources", "findings"}:
+            raise ValueError("baseline version 4 has unsupported fields")
+        if old.get("fingerprint_version") != 2 or not isinstance(old.get("sources"), list):
+            raise ValueError("baseline version 4 has invalid source metadata")
+        if any(not isinstance(s, str) for s in old["sources"]) or len(set(old["sources"])) != len(old["sources"]):
+            raise ValueError("baseline version 4 has invalid source metadata")
+        if any(
+            not isinstance(s, str)
+            or not s
+            or PurePosixPath(s).is_absolute()
+            or PureWindowsPath(s).drive
+            or PureWindowsPath(s).root
+            or "\\" in s
+            or any(part in {".", ".."} for part in PurePosixPath(s).parts)
+            for s in old["sources"]
+        ):
+            raise ValueError("baseline version 4 sources must be relative POSIX paths")
+        if old.get("selector") != selector:
+            raise ValueError(f"baseline selector mismatch: baseline has {old.get('selector')!r}, current scan has {selector!r}")
+        if sources is not None and old["sources"] != list(sources):
+            raise ValueError("baseline sources mismatch: the multi-file input set or source root changed")
+        allowed = _BASELINE_V3_FIELDS | {"source"}
+        if not isinstance(old.get("findings"), list):
+            raise ValueError("baseline version 4 findings must be a list")
+        fingerprints = set()
+        for index, item in enumerate(old.get("findings", [])):
+            if not isinstance(item, dict) or set(item) != allowed:
+                raise ValueError(f"baseline finding {index} has invalid fields")
+            if item["source"] not in old["sources"]:
+                raise ValueError(f"baseline finding {index} has unknown source")
+            if any(not isinstance(item[field], str) or not item[field].strip() for field in allowed):
+                raise ValueError(f"baseline finding {index} fields must be non-empty strings")
+            if not re.fullmatch(r"[0-9a-f]{16}", item["fingerprint"]):
+                raise ValueError(f"baseline finding {index} has invalid fingerprint")
+            if item["severity"] not in SEVERITY_RANK or not re.fullmatch(r"MCPG\d{3}", item["rule_id"]):
+                raise ValueError(f"baseline finding {index} has invalid severity or rule_id")
+            if item["fingerprint"] in fingerprints:
+                raise ValueError(f"baseline finding {index} duplicates a fingerprint")
+            fingerprints.add(item["fingerprint"])
+        return fingerprints
+    if multi:
+        raise ValueError("multi-file input requires a version 4 baseline")
+    if version >= 4:
         raise ValueError(f"unsupported baseline version: {version}")
     if version >= 2 and old.get("selector") != selector:
         raise ValueError(f"baseline selector mismatch: baseline has {old.get('selector')!r}, current scan has {selector!r}")
@@ -445,20 +579,29 @@ def main(argv=None):
     p = argparse.ArgumentParser(prog="mcp-guard")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("scan"); s.add_argument("path"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
-    b = sub.add_parser("baseline"); b.add_argument("path"); b.add_argument("--output", required=True); b.add_argument("--selector"); b.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json")
-    d = sub.add_parser("diff"); d.add_argument("path"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    s = sub.add_parser("scan"); s.add_argument("path", nargs="+"); s.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); s.add_argument("--output"); s.add_argument("--baseline"); s.add_argument("--selector"); s.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); s.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
+    b = sub.add_parser("baseline"); b.add_argument("path", nargs="+"); b.add_argument("--output", required=True); b.add_argument("--selector"); b.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json")
+    d = sub.add_parser("diff"); d.add_argument("path", nargs="+"); d.add_argument("--baseline", required=True); d.add_argument("--format", choices=["json","markdown","sarif"], default="markdown"); d.add_argument("--output"); d.add_argument("--selector"); d.add_argument("--input-format", choices=INPUT_FORMATS, default="mcp-json"); d.add_argument("--fail-on", choices=FAIL_ON_CHOICES, default="high")
     args = p.parse_args(argv)
     try:
-        known = _read_baseline(args.baseline, args.selector, args.input_format) if args.command == "diff" else None
-        findings = scan_file(Path(args.path), selector=args.selector, input_format=args.input_format)
+        multi = len(args.path) > 1
+        known = _read_baseline(args.baseline, args.selector, args.input_format, multi=False) if args.command == "diff" and not multi else None
+        findings = scan_files([Path(p) for p in args.path], selector=args.selector, input_format=args.input_format)
+        current_sources = None
+        if multi:
+            normalized = sorted((Path(p) for p in args.path), key=lambda p: p.resolve().as_posix())
+            root = _source_root(normalized)
+            current_sources = sorted(_source_name(p, root) for p in normalized)
+        if args.command == "diff" and multi:
+            known = _read_baseline(args.baseline, args.selector, args.input_format, multi=True, sources=current_sources)
         if args.command == "baseline":
-            baseline = {
-                "version": 3,
-                "selector": args.selector,
-                "input_format": args.input_format,
-                "findings": [_baseline_finding(f) for f in findings],
-            }
+            if multi:
+                normalized = [Path(p) for p in args.path]
+                root = _source_root(sorted(normalized, key=lambda p: p.resolve().as_posix()))
+                sources = sorted(_source_name(p, root) for p in normalized)
+                baseline = {"version": 4, "scope": "multi-file", "selector": args.selector, "input_format": "mcp-json", "fingerprint_version": 2, "sources": sources, "findings": [_baseline_finding_v4(f) for f in findings]}
+            else:
+                baseline = {"version": 3, "selector": args.selector, "input_format": args.input_format, "findings": [_baseline_finding(f) for f in findings]}
             Path(args.output).write_text(json.dumps(baseline, ensure_ascii=False, indent=2), encoding="utf-8"); return 0
         if args.command == "diff":
             findings = [f for f in findings if f.fingerprint not in known]
@@ -466,8 +609,8 @@ def main(argv=None):
         else:
             fmt = args.format
             if args.baseline:
-                known = _read_baseline(args.baseline, args.selector, args.input_format); findings = [f for f in findings if f.fingerprint not in known]
-        text = as_json(findings) if fmt == "json" else as_sarif(findings, str(Path(args.path))) if fmt == "sarif" else as_markdown(findings)
+                known = _read_baseline(args.baseline, args.selector, args.input_format, multi=multi, sources=current_sources); findings = [f for f in findings if f.fingerprint not in known]
+        text = as_json(findings) if fmt == "json" else as_sarif(findings, str(Path(args.path[0]))) if fmt == "sarif" else as_markdown(findings)
         write_output(text, args.output)
         return 1 if _fails_threshold(findings, args.fail_on) else 0
     except (OSError, ValueError, json.JSONDecodeError) as e:

@@ -69,6 +69,27 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m mcp_guard.cli scan tests/fixtures/safe.json --format json
+      - name: Multi-file scan keeps source-aware findings deterministic
+        env:
+          PYTHONPATH: src
+        run: |
+          set +e
+          python -m mcp_guard.cli scan tests/corpus/fixtures/docker-host.json tests/corpus/fixtures/private-metadata.json --format sarif --output mcp-guard-multi.sarif
+          status=$?
+          set -e
+          test "$status" -eq 1
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("mcp-guard-multi.sarif").read_text())
+          results = report["runs"][0]["results"]
+          assert results
+          assert all("mcpGuard/v2" in item["fingerprints"] for item in results)
+          assert {item["locations"][0]["physicalLocation"]["artifactLocation"]["uri"] for item in results} == {
+              "docker-host.json", "private-metadata.json"
+          }
+          PY
       - name: Scan high-risk fixture with local action
         id: high-risk
         continue-on-error: true
