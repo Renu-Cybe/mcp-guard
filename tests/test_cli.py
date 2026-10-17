@@ -223,10 +223,12 @@ def test_version_is_consistent_across_package_cli_and_sarif(tmp_path):
     version = run('--version')
     assert version.returncode == 0
     assert version.stdout.strip() == f'mcp-guard {__version__}'
-    f = tmp_path/'config.json'; f.write_text(json.dumps({'mcpServers': {'ok': {'command':'node', 'args':['server.js']}}}))
+    f = tmp_path/'config.json'; f.write_text(json.dumps({'mcpServers': {'remote': {'url':'https://example.test/mcp'}}}))
     report = run('scan', str(f), '--format', 'sarif')
     data = json.loads(report.stdout)
     assert data['runs'][0]['tool']['driver']['version'] == __version__
+    rules = data['runs'][0]['tool']['driver']['rules']
+    assert next(rule for rule in rules if rule['id'] == 'MCPG006')['properties']['security-severity'] == '6.0'
 
 def test_rejects_symlink_input(tmp_path):
     target = tmp_path/'real.json'; target.write_text(json.dumps({'mcpServers': {}}))

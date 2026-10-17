@@ -43,7 +43,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.1.7
+      - uses: Renu-Cybe/mcp-guard@v0.1.8
         with:
           path: .mcp.json
           fail-on: medium
@@ -57,7 +57,7 @@ permissions:
   security-events: write
 
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.1.7
+  - uses: Renu-Cybe/mcp-guard@v0.1.8
     with:
       path: .mcp.json
       upload-sarif: true

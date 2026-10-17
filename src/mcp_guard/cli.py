@@ -23,6 +23,7 @@ AUTH_QUERY_KEYS = AUTH_VALUE_KEYS | {"key", "password", "secret"}
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 SEVERITY_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
 FAIL_ON_CHOICES = ("none", "low", "medium", "high")
+SARIF_SECURITY_SEVERITY = {"high": "9.0", "medium": "6.0", "low": "3.0", "none": "0.0"}
 
 
 def redact(value: str) -> str:
@@ -245,7 +246,7 @@ def as_sarif(findings, source_path=None):
     else:
         source_uri = None
     for f in findings:
-        rules.setdefault(f.rule_id, {"id": f.rule_id, "shortDescription": {"text": f.message}, "help": {"text": f.remediation}})
+        rules.setdefault(f.rule_id, {"id": f.rule_id, "shortDescription": {"text": f.message}, "help": {"text": f.remediation}, "properties": {"security-severity": SARIF_SECURITY_SEVERITY.get(f.severity, "0.0")}})
         results.append({"ruleId": f.rule_id, "level": "error" if f.severity == "high" else "warning", "message": {"text": f.message + ": " + redact(f.evidence)}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": source_uri or f.path}, "region": {"snippet": {"text": f.path}}}}], "fingerprints": {"mcpGuard/v1": f.fingerprint}})
     return json.dumps({"version":"2.1.0","$schema":"https://json.schemastore.org/sarif-2.1.0.json","runs":[{"tool":{"driver":{"name":"mcp-guard","version":__version__,"rules":list(rules.values())}},"results":results}]}, ensure_ascii=False, indent=2)
 
