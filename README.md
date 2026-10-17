@@ -6,8 +6,8 @@ MCP Guard is a local-first static checker for MCP and agent configuration. It is
 
 ## What it does
 
-- Reads JSON containing `mcpServers`, `mcp_servers`, or `servers`.
-- Runs six high-confidence checks for credentials, shell execution, broad filesystem paths, private/cloud metadata targets, unpinned dependencies, and missing remote authentication. Baseline filtering is a separate workflow.
+- Reads JSON or JSONC containing `mcpServers`, `mcp_servers`, or `servers`.
+- Runs nine high-confidence checks for credentials, shell execution, broad filesystem paths, private/cloud metadata targets, unpinned dependencies, missing remote authentication, wildcard permissions, broad Docker host access, and unencrypted remote HTTP. Baseline filtering is a separate workflow.
 - Emits JSON, Markdown, or SARIF.
 - The CLI does not start a server, install dependencies, or make network requests. The GitHub Action only uploads the generated SARIF artifact when configured to do so.
 
@@ -36,14 +36,16 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: Renu-Cybe/mcp-guard@v0.1.0
+      - uses: Renu-Cybe/mcp-guard@v0.1.1
         with:
           path: .mcp.json
 ```
 
 ## Scope and limitations
 
-This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
+This release is static and configuration-focused. It does not execute MCP servers, inspect runtime `tools/list`, analyze prompt injection with an LLM, or prove that a project is secure. Supported input formats are JSON and JSONC MCP server maps; registry `server.json`, `SKILL.md`, plugin manifests, SDK source files, and TOML files are rejected as unsupported inputs rather than treated as server maps. Reports redact common credential and URL query patterns, but input files and output paths remain under the caller's control. Review every finding before accepting an exception. Do not commit secrets to fixtures or issue reports.
+
+Loopback endpoints (`localhost`, `127.0.0.1`, and `::1`) are treated as local transports, which avoids flagging common browser-extension bridges for remote authentication or plaintext HTTP. Other private-network and cloud-metadata targets remain high-severity findings.
 
 ## Development
 

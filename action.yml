@@ -3,7 +3,7 @@ name: MCP Guard
 description: Local-first static risk checks for MCP and agent configuration
 inputs:
   path:
-    description: JSON MCP configuration path
+    description: JSON or JSONC MCP configuration path
     required: false
     default: .mcp.json
   output:
