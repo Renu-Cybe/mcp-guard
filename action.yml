@@ -1,0 +1,36 @@
+name: MCP Guard
+
+description: Local-first static risk checks for MCP and agent configuration
+inputs:
+  path:
+    description: JSON MCP configuration path
+    required: false
+    default: .mcp.json
+  output:
+    description: SARIF output path
+    required: false
+    default: mcp-guard.sarif
+runs:
+  using: composite
+  steps:
+    - id: scan
+      shell: bash
+      env:
+        MCP_GUARD_PATH: ${{ inputs.path }}
+        MCP_GUARD_OUTPUT: ${{ inputs.output }}
+      run: |
+        set +e
+        PYTHONPATH="${{ github.action_path }}/src" python -m mcp_guard.cli scan "$MCP_GUARD_PATH" --format sarif --output "$MCP_GUARD_OUTPUT"
+        status=$?
+        echo "status=$status" >> "$GITHUB_OUTPUT"
+        if [ "$status" -gt 1 ]; then
+          exit "$status"
+        fi
+    - if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: mcp-guard-sarif
+        path: ${{ inputs.output }}
+    - if: steps.scan.outputs.status == '1'
+      shell: bash
+      run: exit 1
