@@ -80,6 +80,8 @@ jobs:
           path: .mcp.json
 ```
 
+A working setup that references the action the way an outside repository would is in [`examples/demo`](examples/demo) and runs as the `Consumer demo` workflow.
+
 **Requirements.** The action is a composite action. It runs the scanner from its own checkout with `python` and `bash`, and it does not install Python for you. It needs Python 3.10 or newer on `PATH`. The `actions/setup-python` step above makes that explicit, and GitHub-hosted Ubuntu runners usually have a suitable Python already. The scanner has no third-party dependencies and makes no network requests. The action itself is tested on `ubuntu-latest`; the CLI is tested on Ubuntu, Windows, and macOS, but Windows and macOS runners are not yet covered for the action.
 
 **Defaults to know about.**

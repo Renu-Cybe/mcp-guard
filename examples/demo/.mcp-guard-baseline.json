@@ -1,0 +1,16 @@
+{
+  "version": 3,
+  "selector": null,
+  "input_format": "mcp-json",
+  "findings": [
+    {
+      "fingerprint": "f167d8b6ef5e41e5",
+      "rule_id": "MCPG006",
+      "severity": "medium",
+      "server": "hosted-oauth",
+      "path": "url",
+      "message": "Remote MCP endpoint has no visible authentication configuration",
+      "remediation": "Declare authentication in the config (headers, auth, or an oauth block). If the MCP client handles OAuth itself, confirm that and record this finding in a reviewed baseline; static analysis cannot see client-managed sign-in."
+    }
+  ]
+}

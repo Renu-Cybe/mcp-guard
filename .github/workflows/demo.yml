@@ -1,0 +1,80 @@
+name: Consumer demo
+
+# Uses the action the way an outside repository would: by a remote ref, not `uses: ./`.
+# It therefore exercises the published action at that ref, not the code in this PR.
+# Pinned to a mcp-guard commit until the next tagged release; then switch to the tag.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.13'
+
+jobs:
+  quick-start:
+    name: quick start (clean config)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+        with:
+          path: examples/demo/.mcp.json
+          fail-on: medium
+          artifact-name: demo-quick-start
+
+  baseline:
+    name: reviewed baseline (client-managed OAuth)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+        with:
+          path: examples/demo/configs/remote.json
+          baseline: examples/demo/.mcp-guard-baseline.json
+          fail-on: medium
+          artifact-name: demo-baseline
+
+  code-scanning:
+    name: Code Scanning upload and failure gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      # Medium finding, default high gate: passes and publishes the alert to Code Scanning.
+      - uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+        with:
+          path: examples/demo/configs/unpinned.json
+          upload-sarif: true
+          artifact-name: demo-code-scanning
+      # Same file with a medium gate: the step must fail and still write SARIF.
+      - id: gate
+        continue-on-error: true
+        uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+        with:
+          path: examples/demo/configs/unpinned.json
+          fail-on: medium
+          output: mcp-guard-gate.sarif
+          upload-artifact: false
+      - name: Verify the medium gate failed as expected
+        env:
+          GATE_OUTCOME: ${{ steps.gate.outcome }}
+        run: |
+          test "$GATE_OUTCOME" = failure
+          test -s mcp-guard-gate.sarif
