@@ -275,6 +275,8 @@ def test_action_contract():
     assert 'selector:' in action
     assert 'input-format:' in action
     assert 'fail-on:' in action
+    assert 'baseline:' in action
+    assert 'scan_command+=(--baseline "$MCP_GUARD_BASELINE")' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
 
 
@@ -369,3 +371,66 @@ def test_unsupported_registry_skill_or_toml_inputs_fail_clearly(tmp_path):
         r = run('scan', str(path), '--format', 'json')
         assert r.returncode == 2
         assert 'supported' in r.stderr.lower() or 'no supported' in r.stderr.lower()
+
+
+def test_explicit_oauth_block_counts_as_visible_authentication(tmp_path):
+    cfg = {'mcpServers': {
+        'client_id': {'type': 'http', 'url': 'https://example.test/mcp', 'oauth': {'clientId': 'mcp-guard-test', 'callbackPort': 8080}},
+        'enabled_flag': {'url': 'https://example.test/mcp', 'oauth': {'enabled': True}},
+        'disabled_flag': {'url': 'https://example.test/mcp', 'oauth': {'enabled': False, 'clientId': 'unused'}},
+        'empty_block': {'url': 'https://example.test/mcp', 'oauth': {}},
+        'off_string': {'url': 'https://example.test/mcp', 'oauth': 'none'},
+        'missing': {'url': 'https://example.test/mcp'},
+    }}
+    f = tmp_path / 'config.json'; f.write_text(json.dumps(cfg))
+    r = run('scan', str(f), '--format', 'json')
+    findings = json.loads(r.stdout)
+    assert {item['server'] for item in findings if item['rule_id'] == 'MCPG006'} == {
+        'disabled_flag', 'empty_block', 'off_string', 'missing'
+    }
+
+
+def test_missing_auth_remediation_points_to_reviewed_baseline(tmp_path):
+    cfg = {'mcpServers': {'remote': {'type': 'streamable-http', 'url': 'https://example.test/mcp/'}}}
+    f = tmp_path / 'config.json'; f.write_text(json.dumps(cfg))
+    finding = json.loads(run('scan', str(f), '--format', 'json').stdout)[0]
+    assert finding['rule_id'] == 'MCPG006'
+    assert 'oauth' in finding['remediation'] and 'baseline' in finding['remediation']
+
+
+def test_unpinned_package_message_distinguishes_latest_from_missing_version(tmp_path):
+    cfg = {'mcpServers': {
+        'latest': {'command': 'npx', 'args': ['@playwright/mcp@latest']},
+        'missing': {'command': 'npx', 'args': ['-y', 'firecrawl-mcp']},
+        'scoped_missing': {'command': 'npx @scope/server'},
+    }}
+    f = tmp_path / 'config.json'; f.write_text(json.dumps(cfg))
+    findings = {item['server']: item for item in json.loads(run('scan', str(f), '--format', 'json').stdout)}
+    assert set(findings) == {'latest', 'missing', 'scoped_missing'}
+    assert findings['latest']['message'] == 'Package uses the mutable @latest tag'
+    assert '@playwright/mcp@<exact-version>' in findings['latest']['remediation']
+    assert findings['missing']['message'] == 'Package version is not specified'
+    assert 'firecrawl-mcp@<exact-version>' in findings['missing']['remediation']
+    assert '@scope/server@<exact-version>' in findings['scoped_missing']['remediation']
+
+
+def test_sarif_rule_description_is_stable_when_pin_messages_differ(tmp_path):
+    cfg = {'mcpServers': {
+        'a': {'command': 'npx', 'args': ['-y', 'firecrawl-mcp']},
+        'b': {'command': 'npx', 'args': ['@playwright/mcp@latest']},
+    }}
+    f = tmp_path / 'config.json'; f.write_text(json.dumps(cfg))
+    sarif = json.loads(run('scan', str(f), '--format', 'sarif').stdout)
+    rules = sarif['runs'][0]['tool']['driver']['rules']
+    assert [r['shortDescription']['text'] for r in rules if r['id'] == 'MCPG005'] == ['Dependency or package is not version-pinned']
+    messages = {r['message']['text'].split(':')[0] for r in sarif['runs'][0]['results']}
+    assert messages == {'Package version is not specified', 'Package uses the mutable @latest tag'}
+
+
+def test_message_wording_does_not_change_fingerprints(tmp_path):
+    cfg = {'mcpServers': {'latest': {'command': 'npx', 'args': ['@playwright/mcp@latest']}}}
+    f = tmp_path / 'config.json'; f.write_text(json.dumps(cfg))
+    finding = json.loads(run('scan', str(f), '--format', 'json').stdout)[0]
+    import hashlib
+    expected = hashlib.sha256(f"MCPG005|latest|args[0]|@playwright/mcp@latest".encode()).hexdigest()[:16]
+    assert finding['fingerprint'] == expected

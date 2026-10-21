@@ -24,6 +24,15 @@ AUTH_VALUE_KEYS = {
 }
 AUTH_QUERY_KEYS = AUTH_VALUE_KEYS | {"key", "password", "secret"}
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+# Rules whose per-finding message varies keep one stable SARIF rule description.
+RULE_SUMMARY = {"MCPG005": "Dependency or package is not version-pinned"}
+RULE_HELP = {"MCPG005": "Pin an immutable version or commit and review updates deliberately."}
+OAUTH_DISABLED = {"", "none", "false", "no", "off", "disabled"}
+MCPG006_REMEDIATION = (
+    "Declare authentication in the config (headers, auth, or an oauth block). "
+    "If the MCP client handles OAuth itself, confirm that and record this finding in a reviewed baseline; "
+    "static analysis cannot see client-managed sign-in."
+)
 SEVERITY_RANK = {"none": 0, "low": 1, "medium": 2, "high": 3}
 FAIL_ON_CHOICES = ("none", "low", "medium", "high")
 SARIF_SECURITY_SEVERITY = {"high": "9.0", "medium": "6.0", "low": "3.0", "none": "0.0"}
@@ -47,6 +56,25 @@ def _executor_unpinned(value: str) -> bool:
         return False
     package = match.group("package")
     return (package.startswith("@") and package.count("@") == 1) or (not package.startswith("@") and "@" not in package)
+
+def _executor_package(value: str):
+    match = EXECUTOR.search(value)
+    return match.group("package") if match else None
+
+
+def _pin_remediation(value: str):
+    """Tell the reader whether the version is a mutable tag or missing, and what to write instead."""
+    package = _executor_package(value)
+    if re.search(r"(?i)@latest$", value):
+        package = package or value
+        package = re.sub(r"(?i)@latest$", "", package)
+        if re.search(r"\s", package):
+            return "Package uses the mutable @latest tag", "Replace @latest with an exact version and review updates deliberately."
+        return "Package uses the mutable @latest tag", f"Replace @latest with an exact version, for example {package}@<exact-version>, and review updates deliberately."
+    if package:
+        return "Package version is not specified", f"Pin an exact version, for example {package}@<exact-version>, and review updates deliberately."
+    return "Dependency or package is not version-pinned", "Pin an immutable version or commit and review updates deliberately."
+
 
 @dataclass
 class Finding:
@@ -275,14 +303,16 @@ def scan_file(path: Path, selector=None, input_format="mcp-json", source="", fin
             if BROAD_PATH.search(val) and ("arg" in p.lower() or "path" in p.lower() or "directory" in p.lower()):
                 findings.append(Finding("MCPG003", "high", name, "Broad or sensitive filesystem path", p, redact(val), "Scope filesystem access to a dedicated project directory.").finalize(source, fingerprint_version))
             if UNPINNED.search(val):
-                findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", p, redact(val), "Pin an immutable version or commit and review updates deliberately.").finalize(source, fingerprint_version))
+                message, remediation = _pin_remediation(val)
+                findings.append(Finding("MCPG005", "medium", name, message, p, redact(val), remediation).finalize(source, fingerprint_version))
             if WILDCARD.search(val) and any(k in p.lower() for k in ("tool", "permission", "allow", "scope")):
                 findings.append(Finding("MCPG007", "high", name, "Wildcard tool or permission scope", p, redact(val), "Replace wildcard access with an explicit least-privilege allowlist.").finalize(source, fingerprint_version))
         cmd = str(cfg.get("command", ""))
         args = cfg.get("args", [])
         command_text = " ".join([cmd] + [str(x) for x in args])
         if _executor_unpinned(command_text):
-            findings.append(Finding("MCPG005", "medium", name, "Dependency or package is not version-pinned", "command", redact(command_text), "Pin an immutable version or commit and review updates deliberately.").finalize(source, fingerprint_version))
+            message, remediation = _pin_remediation(command_text)
+            findings.append(Finding("MCPG005", "medium", name, message, "command", redact(command_text), remediation).finalize(source, fingerprint_version))
         if DANGEROUS.search(cmd) or re.search(r"(?i)(?:^|\s)(?:sh|bash|cmd|powershell|pwsh)\s+-c\b", command_text) or INLINE_EXEC.search(command_text):
             findings.append(Finding("MCPG002", "high", name, "Shell interpreter or inline command execution", "command", redact(command_text), "Use a fixed executable and explicit arguments; avoid shell evaluation.").finalize(source, fingerprint_version))
         url = cfg.get("url") or cfg.get("serverUrl") or cfg.get("endpoint")
@@ -290,7 +320,7 @@ def scan_file(path: Path, selector=None, input_format="mcp-json", source="", fin
             loopback = _is_loopback_url(url)
             auth = _has_auth_config(cfg) or _url_has_auth_config(url)
             if not auth and not loopback:
-                findings.append(Finding("MCPG006", "medium", name, "Remote MCP endpoint has no visible authentication configuration", "url", redact(url), "Require explicit authentication and validate token audience at the client boundary.").finalize(source, fingerprint_version))
+                findings.append(Finding("MCPG006", "medium", name, "Remote MCP endpoint has no visible authentication configuration", "url", redact(url), MCPG006_REMEDIATION).finalize(source, fingerprint_version))
             if urlparse(url).scheme == "http" and not loopback and not PRIVATE.search(url):
                 findings.append(Finding("MCPG009", "high", name, "Remote MCP endpoint uses unencrypted HTTP", "url", redact(url), "Use HTTPS or an explicitly isolated local transport.").finalize(source, fingerprint_version))
         docker_text = " ".join([str(cfg.get("command", ""))] + [str(x) for x in cfg.get("args", [])])
@@ -363,7 +393,10 @@ def _has_auth_config(value):
     if isinstance(value, dict):
         for key, child in value.items():
             normalized = key.lower().replace("-", "_")
-            if normalized in AUTH_VALUE_KEYS and _has_auth_value(child):
+            if normalized == "oauth":
+                if _declares_oauth(child):
+                    return True
+            elif normalized in AUTH_VALUE_KEYS and _has_auth_value(child):
                 return True
             if normalized == "auth":
                 if isinstance(child, str) and child.strip().lower() not in {"", "none", "false", "anonymous", "no"}:
@@ -374,6 +407,25 @@ def _has_auth_config(value):
                 return True
     elif isinstance(value, list):
         return any(_has_auth_config(child) for child in value)
+    return False
+
+
+def _declares_oauth(value):
+    """An explicit client OAuth block (for example `oauth: {clientId: ...}`) is
+    visible auth configuration even though it carries no secret.  A disabled or
+    empty block is not."""
+    if isinstance(value, str):
+        return value.strip().lower() not in OAUTH_DISABLED
+    if value is True:
+        return True
+    if isinstance(value, dict):
+        enabled = value.get("enabled", True)
+        if enabled is False or (isinstance(enabled, str) and enabled.strip().lower() in OAUTH_DISABLED):
+            return False
+        return any(
+            child is True or (isinstance(child, str) and child.strip()) or (isinstance(child, (dict, list)) and child)
+            for key, child in value.items() if key != "enabled"
+        ) or value.get("enabled") is True
     return False
 
 
@@ -450,7 +502,7 @@ def as_sarif(findings, source_path=None):
     else:
         source_uri = None
     for f in findings:
-        rules.setdefault(f.rule_id, {"id": f.rule_id, "shortDescription": {"text": f.message}, "help": {"text": f.remediation}, "properties": {"security-severity": SARIF_SECURITY_SEVERITY.get(f.severity, "0.0")}})
+        rules.setdefault(f.rule_id, {"id": f.rule_id, "shortDescription": {"text": RULE_SUMMARY.get(f.rule_id, f.message)}, "help": {"text": RULE_HELP.get(f.rule_id, f.remediation)}, "properties": {"security-severity": SARIF_SECURITY_SEVERITY.get(f.severity, "0.0")}})
         uri = f.source or source_uri or f.path
         key = "mcpGuard/v2" if f.fingerprint_version >= 2 else "mcpGuard/v1"
         results.append({"ruleId": f.rule_id, "level": "error" if f.severity == "high" else "warning", "message": {"text": f.message + ": " + redact(f.evidence)}, "locations": [{"physicalLocation": {"artifactLocation": {"uri": uri}, "region": {"snippet": {"text": f.path}}}}], "fingerprints": {key: f.fingerprint}})

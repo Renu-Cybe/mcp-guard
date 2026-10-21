@@ -1,10 +1,10 @@
 # MCP Guard
 
-[![CI](https://github.com/Renu-Cybe/mcp-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/Renu-Cybe/mcp-guard/actions/workflows/ci.yml)
+[![CI](https://github.com/latentide/mcp-guard/actions/workflows/ci.yml/badge.svg)](https://github.com/latentide/mcp-guard/actions/workflows/ci.yml)
 
 MCP Guard is a local-first static checker for MCP and agent configuration. It is intended as a release and CI gate, not a security certification.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for safe fixture and rule changes. Use the [false-positive issue form](https://github.com/Renu-Cybe/mcp-guard/issues/new?template=false-positive.yml) for sanitized findings and [SECURITY.md](SECURITY.md) for private vulnerability reports.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for safe fixture and rule changes. Use the [false-positive issue form](https://github.com/latentide/mcp-guard/issues/new?template=false-positive.yml) for sanitized findings and [SECURITY.md](SECURITY.md) for private vulnerability reports.
 
 ## What it does
 
@@ -12,7 +12,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for safe fixture and rule changes. Use th
 - Runs nine high-confidence checks for credentials, shell execution, broad filesystem paths, private/cloud metadata targets, unpinned dependencies, missing remote authentication, wildcard permissions, broad Docker host access, and unencrypted remote HTTP. Baseline filtering is a separate workflow.
 - Emits JSON, Markdown, or SARIF.
 - Exposes the package version through `mcp-guard --version` and SARIF metadata.
-- The CLI does not start a server, install dependencies, or make network requests. The GitHub Action only uploads the generated SARIF artifact when configured to do so.
+- The CLI does not start a server, install dependencies, or make network requests. The GitHub Action uploads the generated SARIF as a workflow artifact by default (`upload-artifact: true`) and to Code Scanning only when `upload-sarif: true`.
 
 ## Install and use
 
@@ -57,11 +57,48 @@ By default, high-severity findings return exit code 1. Use `--fail-on medium` (o
 
 ## GitHub Action
 
+### Quick start
+
+Add this workflow as `.github/workflows/mcp-guard.yml` in your repository. It scans `.mcp.json`, fails the job on high-severity findings, and keeps the SARIF report as a workflow artifact.
+
+```yaml
+name: MCP Guard
+on: [pull_request, push]
+
+jobs:
+  mcp-guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - uses: latentide/mcp-guard@v0.4.0
+        with:
+          path: .mcp.json
+```
+
+**Requirements.** The action is a composite action. It runs the scanner from its own checkout with `python` and `bash`, and it does not install Python for you. It needs Python 3.10 or newer on `PATH`. The `actions/setup-python` step above makes that explicit, and GitHub-hosted Ubuntu runners usually have a suitable Python already. The scanner has no third-party dependencies and makes no network requests. The action itself is tested on `ubuntu-latest`; the CLI is tested on Ubuntu, Windows, and macOS, but Windows and macOS runners are not yet covered for the action.
+
+**Defaults to know about.**
+
+| Input | Default | What it means |
+|---|---|---|
+| `fail-on` | `high` | Only high-severity findings fail the job. Use `medium` to also fail on medium findings such as unpinned packages (`MCPG005`) or missing visible remote auth (`MCPG006`), or `none` to fail on any finding. |
+| `upload-artifact` | `true` | The SARIF file is uploaded as the `mcp-guard-sarif` artifact, even when findings fail the job. Set `false` for private workflows, or give each invocation a unique `artifact-name` when a job runs the action more than once. |
+| `upload-sarif` | `false` | Code Scanning upload is opt-in and needs `security-events: write`; see below. |
+
+Exit behavior: status `1` (findings at or above `fail-on`) still writes and uploads SARIF and then fails the job. Status `2` (invalid or ambiguous input) fails immediately and uploads nothing.
+
+### Inputs and more examples
+
 The v0.4.0 action accepts either the existing single-file `path` input or a multiline `paths` input. When `paths` contains one or more non-blank lines, each line becomes exactly one CLI argument; paths are not shell-split, glob-expanded, or recursively traversed. Blank and whitespace-only lines are ignored. `paths` takes precedence over `path`.
 
 Use `paths` for an explicit multi-file MCP JSON scan. The files must be JSON/JSONC, and the action preserves source-aware SARIF URIs for every file:
 
-Use the action from a tagged copy of this repository. It writes a SARIF file and uploads it as an artifact. It does not comment on pull requests, upload configuration to a service, auto-fix files, or grant write permissions.
+Use the action from a tagged release of this repository. It writes a SARIF file and, by default, uploads it as an artifact. It does not comment on pull requests, upload configuration to a service, auto-fix files, or grant write permissions.
 The artifact is uploaded before the configured severity threshold fails the job; invalid input fails the action as an error and uploads neither SARIF nor an artifact. With `paths`, selecting more than one file while `input-format: registry` is rejected. Set `fail-on: medium` to gate on medium and high findings.
 
 ```yaml
@@ -72,7 +109,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: Renu-Cybe/mcp-guard@v0.4.0
+      - uses: latentide/mcp-guard@v0.4.0
         with:
           paths: |
             configs/team one.json
@@ -88,26 +125,52 @@ For a published MCP Registry `server.json`, opt into the explicit adapter:
 
 ```yaml
 steps:
-  - uses: Renu-Cybe/mcp-guard@v0.4.0
+  - uses: latentide/mcp-guard@v0.4.0
     with:
       path: server.json
       input-format: registry
 ```
 
-To publish findings to GitHub Code Scanning, grant `security-events: write` and opt in explicitly. The artifact upload remains enabled by default and can be disabled for private workflows.
+To publish findings to GitHub Code Scanning, grant `security-events: write` and opt in explicitly. Code Scanning must be available for the repository (public repositories, or private repositories with GitHub Advanced Security). The artifact upload remains enabled by default and can be disabled for private workflows.
 
 ```yaml
-permissions:
-  contents: read
-  security-events: write
-
-steps:
-  - uses: Renu-Cybe/mcp-guard@v0.4.0
-    with:
-      path: .mcp.json
-      upload-sarif: true
-      artifact-name: mcp-guard-${{ github.job }}
+jobs:
+  mcp-guard:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+      - uses: latentide/mcp-guard@v0.4.0
+        with:
+          path: .mcp.json
+          upload-sarif: true
+          artifact-name: mcp-guard-${{ github.job }}
 ```
+
+### When a finding is expected
+
+Some findings depend on context the file cannot show. For example, `MCPG006` reports a remote endpoint with no visible authentication even when the MCP client signs in with OAuth on its own. Declare auth in the config when your client supports it (headers, `auth`, or an `oauth` block). Otherwise, review the finding and record it in a baseline, then commit that file so the exception is visible in code review:
+
+```bash
+mcp-guard baseline .mcp.json --output .mcp-guard-baseline.json
+mcp-guard scan .mcp.json --baseline .mcp-guard-baseline.json
+```
+
+The baseline stores fingerprints and review metadata only, never credential values. In CI, pass the committed file to the action:
+
+```yaml
+      - uses: latentide/mcp-guard@v0.4.0
+        with:
+          path: .mcp.json
+          baseline: .mcp-guard-baseline.json
+```
+
+The `baseline` input is new after v0.4.0 and is available from the next release; with `@v0.4.0`, run the CLI in a workflow step instead.
 
 ## Scope and limitations
 

@@ -103,6 +103,15 @@ One earlier CI run, [39063427262](https://github.com/Renu-Cybe/mcp-guard/actions
 
 The D5 decision gate for “at least two projects complete a GitHub Action or equivalent CI trial” remains **unmet**: current evidence is one repository's local Action plus sanitized fixtures, with no external project workflow and no outreach. No code or Action implementation was changed in D5.
 
+## D6 trial-blocking fixes
+
+D6 changes only the two P0 items from the D4 integration priority. Finding IDs, severities, and fingerprints are unchanged, so existing baselines keep matching. No external project was contacted.
+
+| Blocker (D4) | Change | Boundary |
+|---|---|---|
+| T-01 `MCPG006` may be context-dependent for host-managed OAuth | An explicit client `oauth` block (for example `clientId`, scopes, or `enabled: true`) now counts as visible authentication; a disabled or empty block does not. The remediation now says to declare auth in the config or, when the client handles OAuth itself, record the finding in a reviewed baseline. | No vendor or domain allowlist. The T-01 fixture still reports `MCPG006`, because nothing in that file declares auth. |
+| T-02 / T-05 `MCPG005` wording does not separate a mutable tag from a missing version | The message is now "Package uses the mutable @latest tag" or "Package version is not specified", and the remediation names the package, for example `@playwright/mcp@<exact-version>`. SARIF keeps one stable rule description for `MCPG005`. | Severity stays medium; no lockfile awareness was added. |
+
 ## Evidence rules
 
 - Record public links, commands, exit codes, and sanitized output only.
