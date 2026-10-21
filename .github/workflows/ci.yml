@@ -127,6 +127,27 @@ jobs:
               "docker-host.json", "private-metadata.json"
           }
           PY
+      - name: Create a reviewed baseline for the high-risk fixture
+        env:
+          PYTHONPATH: src
+        run: python -m mcp_guard.cli baseline tests/fixtures/high-risk.json --output mcp-guard-baseline.json
+      - name: Action baseline input suppresses reviewed findings
+        uses: ./
+        with:
+          path: tests/fixtures/high-risk.json
+          baseline: mcp-guard-baseline.json
+          fail-on: low
+          output: mcp-guard-baselined.sarif
+          upload-artifact: false
+      - name: Verify baselined SARIF is empty
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("mcp-guard-baselined.sarif").read_text())
+          assert report["runs"][0]["results"] == []
+          PY
       - name: Scan high-risk fixture with local action
         id: high-risk
         continue-on-error: true

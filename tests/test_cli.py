@@ -275,6 +275,8 @@ def test_action_contract():
     assert 'selector:' in action
     assert 'input-format:' in action
     assert 'fail-on:' in action
+    assert 'baseline:' in action
+    assert 'scan_command+=(--baseline "$MCP_GUARD_BASELINE")' in action
     assert 'run: PYTHONPATH="${{ github.action_path }}/src"' not in action
 
 

@@ -38,6 +38,10 @@ inputs:
     description: Input schema to scan (mcp-json or explicit MCP Registry server.json)
     required: false
     default: mcp-json
+  baseline:
+    description: Optional reviewed baseline file; findings it lists are left out of SARIF and the failure gate
+    required: false
+    default: ''
   fail-on:
     description: Minimum severity that fails the action
     required: false
@@ -54,6 +58,7 @@ runs:
         MCP_GUARD_SELECTOR: ${{ inputs.selector }}
         MCP_GUARD_INPUT_FORMAT: ${{ inputs.input-format }}
         MCP_GUARD_FAIL_ON: ${{ inputs.fail-on }}
+        MCP_GUARD_BASELINE: ${{ inputs.baseline }}
         MCP_GUARD_SOURCE_ROOT: ${{ github.workspace }}
       run: |
         set +e
@@ -73,6 +78,9 @@ runs:
         scan_command=(python -m mcp_guard.cli scan --format sarif --output "$MCP_GUARD_OUTPUT")
         if [ -n "$MCP_GUARD_SELECTOR" ]; then
           scan_command+=(--selector "$MCP_GUARD_SELECTOR")
+        fi
+        if [ -n "$MCP_GUARD_BASELINE" ]; then
+          scan_command+=(--baseline "$MCP_GUARD_BASELINE")
         fi
         scan_command+=(--input-format "$MCP_GUARD_INPUT_FORMAT" --fail-on "$MCP_GUARD_FAIL_ON")
         if [ "${#scan_paths[@]}" -gt 1 ]; then
