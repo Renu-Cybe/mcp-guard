@@ -2,7 +2,6 @@ name: Consumer demo
 
 # Uses the action the way an outside repository would: by a remote ref, not `uses: ./`.
 # It therefore exercises the published action at that ref, not the code in this PR.
-# Pinned to a mcp-guard commit until the next tagged release; then switch to the tag.
 on:
   push:
     branches: [master]
@@ -23,7 +22,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           path: examples/demo/.mcp.json
           fail-on: medium
@@ -39,7 +38,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           path: examples/demo/configs/remote.json
           baseline: examples/demo/.mcp-guard-baseline.json
@@ -58,7 +57,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       # Medium finding, default high gate: passes and publishes the alert to Code Scanning.
-      - uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           path: examples/demo/configs/unpinned.json
           upload-sarif: true
@@ -66,7 +65,7 @@ jobs:
       # Same file with a medium gate: the step must fail and still write SARIF.
       - id: gate
         continue-on-error: true
-        uses: latentide/mcp-guard@1fcf4c62b5e1c9c8240f50b47ea706ae740a0cb6
+        uses: latentide/mcp-guard@v0.5.0
         with:
           path: examples/demo/configs/unpinned.json
           fail-on: medium
