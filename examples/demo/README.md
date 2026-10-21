@@ -1,6 +1,6 @@
 # Consumer demo
 
-This folder plays the part of an outside repository that adopts MCP Guard. The workflow in [`.github/workflows/demo.yml`](../../.github/workflows/demo.yml) references the action as `latentide/mcp-guard@<ref>`, exactly as another project would, instead of the local `uses: ./` used by the main CI. All configurations are sanitized examples; no real endpoints, tokens, or servers are used.
+This folder plays the part of an outside repository that adopts MCP Guard. The workflow in [`.github/workflows/demo.yml`](../../.github/workflows/demo.yml) references the action as `latentide/mcp-guard@v0.5.0`, exactly as another project would, instead of the local `uses: ./` used by the main CI. All configurations are sanitized examples; no real endpoints, tokens, or servers are used.
 
 | File | What it shows | Expected result |
 |---|---|---|
