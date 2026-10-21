@@ -75,7 +75,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
-      - uses: latentide/mcp-guard@v0.4.0
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           path: .mcp.json
 ```
@@ -96,7 +96,7 @@ Exit behavior: status `1` (findings at or above `fail-on`) still writes and uplo
 
 ### Inputs and more examples
 
-The v0.4.0 action accepts either the existing single-file `path` input or a multiline `paths` input. When `paths` contains one or more non-blank lines, each line becomes exactly one CLI argument; paths are not shell-split, glob-expanded, or recursively traversed. Blank and whitespace-only lines are ignored. `paths` takes precedence over `path`.
+The action accepts either the existing single-file `path` input or a multiline `paths` input. When `paths` contains one or more non-blank lines, each line becomes exactly one CLI argument; paths are not shell-split, glob-expanded, or recursively traversed. Blank and whitespace-only lines are ignored. `paths` takes precedence over `path`.
 
 Use `paths` for an explicit multi-file MCP JSON scan. The files must be JSON/JSONC, and the action preserves source-aware SARIF URIs for every file:
 
@@ -111,7 +111,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: latentide/mcp-guard@v0.4.0
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           paths: |
             configs/team one.json
@@ -127,7 +127,7 @@ For a published MCP Registry `server.json`, opt into the explicit adapter:
 
 ```yaml
 steps:
-  - uses: latentide/mcp-guard@v0.4.0
+  - uses: latentide/mcp-guard@v0.5.0
     with:
       path: server.json
       input-format: registry
@@ -147,7 +147,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.13'
-      - uses: latentide/mcp-guard@v0.4.0
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           path: .mcp.json
           upload-sarif: true
@@ -166,13 +166,13 @@ mcp-guard scan .mcp.json --baseline .mcp-guard-baseline.json
 The baseline stores fingerprints and review metadata only, never credential values. In CI, pass the committed file to the action:
 
 ```yaml
-      - uses: latentide/mcp-guard@v0.4.0
+      - uses: latentide/mcp-guard@v0.5.0
         with:
           path: .mcp.json
           baseline: .mcp-guard-baseline.json
 ```
 
-The `baseline` input is new after v0.4.0 and is available from the next release; with `@v0.4.0`, run the CLI in a workflow step instead.
+The `baseline` input is available from v0.5.0.
 
 ## Scope and limitations
 
