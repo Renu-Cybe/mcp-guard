@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "hosted-oauth": {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/mcp/"
+    },
+    "declared-oauth": {
+      "type": "http",
+      "url": "https://mcp.example.org/mcp/",
+      "oauth": { "clientId": "demo-client" }
+    }
+  }
+}
